@@ -1,4 +1,5 @@
 icon /usr/share/deepin-software-center
+locale /usr/share/deepin-software-center
 pkgData /usr/share/deepin-software-center
 src /usr/share/deepin-software-center
 theme /usr/share/deepin-software-center
