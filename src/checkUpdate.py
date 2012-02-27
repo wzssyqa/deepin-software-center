@@ -43,15 +43,16 @@ import urllib2
 def sendStatistics():
     '''Send statistics.'''
     try:
-        userId = getUniqueId()
-        args = {'a' : 'm', 'n' : userId}
+        uuid = readFirstLine(UUID_FILE, True)
+        if uuid != "": 
+            args = {'a' : 'm', 'n' : uuid}
         
-        connection = urllib2.urlopen(
-            "%s/softcenter/v1/analytics" % (SERVER_ADDRESS),
-            data=urllib.urlencode(args),
-            timeout=POST_TIMEOUT,
-            )
-        connection.read()
+            connection = urllib2.urlopen(
+                "%s/softcenter/v1/analytics" % (SERVER_ADDRESS),
+                data=urllib.urlencode(args),
+                timeout=POST_TIMEOUT,
+                )
+            connection.read()
     except Exception, e:
         print e
         
@@ -212,44 +213,31 @@ class TrayIcon(object):
 
     def main(self):
         '''Main.'''
-        # Get input.
-        ignoreInterval = len(sys.argv) == 2 and sys.argv[1] == "--now"
+        # Send statistics information.
+        AnonymityThread(sendStatistics).start()
         
-        # Get last update hours.
-        agoHours = getLastUpdateHours("./check-update-stamp")
-        
-        # Just update one day after.
-        if ignoreInterval or (agoHours != None and agoHours >= UPDATE_INTERVAL):
-            # Touch file to mark update stamp.
-            touchFile("./check-update-stamp")
-                
-            # Send statistics information.
-            AnonymityThread(sendStatistics).start()
+        # Just show tray icon when have updatable packages.
+        self.updateNum = self.calculateUpdateNumber()
+        if self.updateNum > 0:
+            print "Show tray icon."
             
-            # Just show tray icon when have updatable packages.
-            self.updateNum = self.calculateUpdateNumber()
-            if self.updateNum > 0:
-                print "Show tray icon."
-                
-                gtk.gdk.threads_init()        
-                
-                self.trayIcon = gtk.StatusIcon()
-                self.trayIcon.set_from_file("../icon/icon.png")
-                self.trayIcon.set_has_tooltip(True)
-                self.trayIcon.set_visible(True)
-                self.trayIcon.connect("activate", lambda w: self.showSoftwareCenter())
-                self.trayIcon.connect("query-tooltip", self.hoverIcon)
-                self.trayIcon.connect("popup-menu", self.handleRightClick)
-                
-                # Show tooltips.
-                # Add timeout to make tooltip display at correct coordinate.
-                glib.timeout_add_seconds(1, self.hoverIcon)
-                
-                gtk.main()
-            else:
-                print "No updatable packages, exit."
+            gtk.gdk.threads_init()        
+            
+            self.trayIcon = gtk.StatusIcon()
+            self.trayIcon.set_from_file("../icon/icon.png")
+            self.trayIcon.set_has_tooltip(True)
+            self.trayIcon.set_visible(True)
+            self.trayIcon.connect("activate", lambda w: self.showSoftwareCenter())
+            self.trayIcon.connect("query-tooltip", self.hoverIcon)
+            self.trayIcon.connect("popup-menu", self.handleRightClick)
+            
+            # Show tooltips.
+            # Add timeout to make tooltip display at correct coordinate.
+            glib.timeout_add_seconds(1, self.hoverIcon)
+            
+            gtk.main()
         else:
-            print "Just check update %s hours ago" % (agoHours)
+            print "No updatable packages, exit."
             
 if __name__ == "__main__":
     TrayIcon().main()

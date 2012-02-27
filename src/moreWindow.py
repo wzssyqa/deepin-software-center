@@ -84,7 +84,7 @@ class MoreWindow(object):
     
     def reportProblem(self,):
         '''Report problem.'''
-        sendCommand("xdg-open http://www.linuxdeepin.com/forum/17")
+        sendCommand("xdg-open http://www.linuxdeepin.com/mantis/login_select_proj_page.php?ref=bug_report_page.php")
     
     def setIndex(self, index):
         '''Set index.'''
@@ -176,7 +176,7 @@ class NewFeature(object):
         self.titleBox.pack_start(self.titleAlign, True, True)
         
         self.closeButton = gtk.Button()
-        self.closeButton.connect("button-release-event", lambda w, e: self.hide())
+        self.closeButton.connect("clicked", lambda w: self.hide())
         drawButton(self.closeButton, "close", "navigate")
         self.titleBox.pack_start(self.closeButton, False, False)
         
