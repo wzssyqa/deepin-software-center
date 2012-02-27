@@ -133,7 +133,7 @@ class DeepinSoftwareCenter(object):
         
         self.window.connect_after("show", lambda w: self.createTooltips())
         
-    def showThemeSelectWindow(self, widget, event):
+    def showThemeSelectWindow(self, widget):
         '''Show theme select window.'''
         if self.themeSelectWindow.window.get_visible():
             self.themeSelectWindow.hide()
@@ -147,7 +147,7 @@ class DeepinSoftwareCenter(object):
             (x, y) = widget.translate_coordinates(self.window, wx, wy)
             self.themeSelectWindow.show(x + rect.width - THEME_WINDOW_WIDTH, y + rect.height)
             
-    def showMoreWindow(self, widget, event):
+    def showMoreWindow(self, widget):
         '''Show more window.'''
         if self.moreWindow.window.get_visible():
             self.moreWindow.hide()
@@ -797,7 +797,7 @@ class DeepinSoftwareCenter(object):
 
         # Init.
         window.set_title(__("Deepin Software Center"))
-        window.set_position(gtk.WIN_POS_CENTER_ALWAYS)
+        window.set_position(gtk.WIN_POS_CENTER)
         (width, height) = utils.getScreenSize(window)
         window.set_default_size(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
         window.set_geometry_hints(
