@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,13 +23,12 @@
 from appItem import *
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
 from theme import *
 import appView
 import gtk
 import pango
-import pygtk
 import utils
-pygtk.require('2.0')
 
 class RecommendItem(DownloadItem):
     '''Application item.'''
@@ -75,7 +74,7 @@ class RecommendItem(DownloadItem):
         self.itemAlign.add(self.itemBox)
         self.itemEventBox = gtk.EventBox()
         self.itemEventBox.connect("button-press-event", lambda w, e: clickItem(w, e, entryDetailCallback, appInfo))
-        drawListItem(self.itemEventBox, index, getSelectIndex, False)
+        drawRecommendItem(self.itemEventBox, index, getSelectIndex)
         self.itemFrame = gtk.Alignment()
         self.itemFrame.set(0.0, 0.5, 0.0, 0.0)
         
@@ -85,17 +84,17 @@ class RecommendItem(DownloadItem):
         self.appLeftAlign.add(self.appLeftBox)
         self.itemBox.pack_start(self.appLeftAlign)
         
-        self.appBasicBox = gtk.HBox()
-        self.appLeftBox.pack_start(self.appBasicBox, False, False)
+        self.appBasicView = gtk.HBox()
+        self.appLeftBox.pack_start(self.appBasicView, False, False)
         
         self.appIconBox = gtk.VBox()
-        self.appBasicBox.pack_start(self.appIconBox, False, False)
+        self.appBasicView.pack_start(self.appIconBox, False, False)
         
         self.appAdditionBox = gtk.VBox()
         self.appAdditionAlign = gtk.Alignment()
         self.appAdditionAlign.set(0.5, 0.5, 0.0, 0.0)
         self.appAdditionAlign.add(self.appAdditionBox)
-        self.appBasicBox.pack_start(self.appAdditionAlign, False, False)
+        self.appBasicView.pack_start(self.appAdditionAlign, False, False)
         
         self.appTopBox = gtk.HBox()
         self.appAdditionBox.pack_start(self.appTopBox, False, False)
@@ -160,14 +159,14 @@ class RecommendItem(DownloadItem):
         if self.appInfo.status == APP_STATE_NORMAL:
             (appButton, appButtonAlign) = newActionButton(
                 "install", 0.5, 0.5, 
-                "cell", False, "安装", BUTTON_FONT_SIZE_SMALL, "buttonFont"
+                "cell", False, __("Action Install"), BUTTON_FONT_SIZE_SMALL, "buttonFont"
                 )
             appButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
             appButtonBox.pack_start(appButtonAlign)
         elif self.appInfo.status == APP_STATE_UPGRADE:
             (appButton, appButtonAlign) = newActionButton(
                 "update", 0.5, 0.5, 
-                "cell", False, "升级", BUTTON_FONT_SIZE_SMALL, "buttonFont"
+                "cell", False, __("Action Update"), BUTTON_FONT_SIZE_SMALL, "buttonFont"
                 )
             appButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
             appButtonBox.pack_start(appButtonAlign)
@@ -176,14 +175,14 @@ class RecommendItem(DownloadItem):
             if execPath:
                 (appButton, appButtonAlign) = newActionButton(
                     "update", 0.5, 0.5, 
-                    "cell", False, "启动", BUTTON_FONT_SIZE_SMALL, "buttonFont"
+                    "cell", False, __("Action Startup"), BUTTON_FONT_SIZE_SMALL, "buttonFont"
                     )
                 appButton.connect("button-release-event", lambda widget, event: self.launchApplicationCallback(execPath))
                 appButtonBox.pack_start(appButtonAlign)
             else:
                 appInstalledDynamicLabel = DynamicSimpleLabel(
                     appButtonBox,
-                    "已安装",
+                    __("Action Installed"),
                     appTheme.getDynamicColor("installed"),
                     LABEL_FONT_SIZE,
                     )
@@ -406,7 +405,7 @@ class RecommendItem(DownloadItem):
             if self.downloadingProgressbar != None and self.downloadingFeedbackLabel != None:
                 self.downloadingProgressbar.setProgress(progress)
                 if self.appInfo.status == APP_STATE_DOWNLOAD_PAUSE:
-                    self.downloadingFeedbackLabel.set_markup("<span size='%s'>暂停</span>" % (LABEL_FONT_SIZE))
+                    self.downloadingFeedbackLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, __("Pause")))
                 else:
                     self.downloadingFeedbackLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, feedback))
                 
@@ -425,7 +424,8 @@ class RecommendItem(DownloadItem):
         pkgName = utils.getPkgName(pkg)
         (appName, appNameEventBox) = setDefaultClickableDynamicLabel(
             pkgName,
-            "appName"
+            "appName",
+            LABEL_FONT_SIZE,
             )
         appName.set_size_request(self.NAME_WIDTH, -1)
         appName.set_single_line_mode(True)
@@ -434,8 +434,7 @@ class RecommendItem(DownloadItem):
             "button-press-event",
             lambda w, e: self.entryDetailView())
         
-        pkgVersion = utils.getPkgVersion(pkg)
-        utils.setHelpTooltip(appNameEventBox, "版本: %s\n点击查看详细信息" % (pkgVersion))
+        utils.showVersionTooltip(appNameEventBox, pkg)
         
         self.appNameBox.pack_start(appNameEventBox, False, False)
         
@@ -468,7 +467,7 @@ class RecommendView(object):
     '''Recommend view.'''
 	
     def __init__(self, repoCache, switchStatus, downloadQueue, entryDetailCallback, selectCategoryCallback,
-                 launchApplicationCallback):
+                 launchApplicationCallback, updateDataDir):
         '''Init for recommend view.'''
         # Init.
         self.repoCache = repoCache
@@ -477,6 +476,7 @@ class RecommendView(object):
         self.entryDetailCallback = entryDetailCallback
         self.selectCategoryCallback = selectCategoryCallback
         self.launchApplicationCallback = launchApplicationCallback
+        self.updateDataDir = updateDataDir
         
         self.box = gtk.VBox()
         self.itemDict = {}
@@ -486,7 +486,7 @@ class RecommendView(object):
         
         # Create container box.
         listLen = 12
-        self.pkgRecomments = evalFile("../updateData/pkgRecommend/%s/recommendList.txt" % (getDefaultLanguage()))
+        self.pkgRecomments = evalFile(self.updateDataDir + "pkgRecommend/%s/recommendList.txt" % (getDefaultLanguage()))
         boxlist = map (lambda n: gtk.HBox(), range(0, listLen / 2 + listLen % 2))
         for box in boxlist:
             self.box.pack_start(box, False, False)
@@ -560,7 +560,7 @@ class RecommendView(object):
         # Show more label.
         if showMore:
             (moreLabel, moreLabelEventBox) = setDefaultClickableDynamicLabel(
-                "更多 >>",
+                __("More >>"),
                 "recommendMore",
                 LABEL_FONT_MEDIUM_SIZE,
                 )
@@ -582,14 +582,14 @@ class RecommendView(object):
         box.pack_start(contentBox, False, False)
         
         leftLine = gtk.Image()
-        drawLine(leftLine, appTheme.getDynamicColor("recommendFrame"), 2, True, LINE_LEFT)
+        drawLine(leftLine, appTheme.getDynamicColor("recommendFrame"), 1, True, LINE_LEFT)
         contentBox.pack_start(leftLine, False, False)
         
         middleBox = gtk.VBox()
         contentBox.pack_start(middleBox, False, False)
         
         rightLine = gtk.Image()
-        drawLine(rightLine, appTheme.getDynamicColor("recommendFrame"), 2, True, LINE_RIGHT)
+        drawLine(rightLine, appTheme.getDynamicColor("recommendFrame"), 1, True, LINE_RIGHT)
         contentBox.pack_start(rightLine, False, False)
         
         # Add application information's.
@@ -612,7 +612,7 @@ class RecommendView(object):
                 
         # Bottom line.
         bottomLine = gtk.Image()
-        drawLine(bottomLine, appTheme.getDynamicColor("recommendFrame"), 2, False, LINE_BOTTOM)
+        drawLine(bottomLine, appTheme.getDynamicColor("recommendFrame"), 1, False, LINE_BOTTOM)
         box.pack_start(bottomLine, False, False)
     
         return boxAlign

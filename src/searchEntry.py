@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,12 +20,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from lang import __, getDefaultLanguage
 from theme import *
 import gobject
 import gtk
-import pygtk
-pygtk.require('2.0')
-
+import pango
 
 class SearchEntry(gtk.Entry):
     '''Search entry.'''
@@ -39,6 +38,9 @@ class SearchEntry(gtk.Entry):
         self.backgroundDColor = backgroundDColor
         self.foregroundDColor = foregroundDColor
         self.ticker = 0
+        
+        # Set default font.
+        self.modify_font(pango.FontDescription(DEFAULT_FONT + " 10"))
         
         # Clean input when first time focus in entry.
         if noHint:

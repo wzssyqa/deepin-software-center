@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 #
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,8 +20,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from lang import __, getDefaultLanguage
+
+OS_VERSION = "LinuxDeepin"
+
 VERSION = "2.0"
-AUTHOR = ["Yong Wang"]
+AUTHOR = ["Wang Yong"]
 ARTISTS = ["Can Yang"]
 
 APP_STATE_NORMAL = 1
@@ -51,18 +55,18 @@ DOWNLOAD_STATUS_PAUSE = 3
 DOWNLOAD_STATUS_STOP = 4
 DOWNLOAD_STATUS_TIMEOUT = 5
 
-CLASSIFY_NEWS = "最近更新"         # 最近更新的软件, 主要用于推荐新的程序
-CLASSIFY_RECOMMEND = "编辑推荐"    # 具体有特色的软件, 主要用于定期循环推荐
-CLASSIFY_WEB = "网络应用"          # 任何以网络设计为主的软件
-CLASSIFY_MULTIMEDIA = "影音播放"   # 围绕着视频、音频设计的播放软件和相关工具
-CLASSIFY_GAME = "游戏娱乐"         # 游戏及其工具
-CLASSIFY_GRAPHICS = "图形图像"     # 围绕图形编辑和设计的相关工具
-CLASSIFY_WORD = "文字处理"         # 办公, 阅读, 和其他相关的文字处理软件
-CLASSIFY_PROFESSIONAL = "行业软件" # 专业相关的软件, 需要相关的专业知识
-CLASSIFY_PROGRAMMING = "编程开发"  # 围绕开发的各种相关工具
-CLASSIFY_DRIVER = "硬件驱动"       # 硬件驱动及工具
-CLASSIFY_WINDOWS = "WIN 软件"     # 通过 Wine 来运行的各种软件
-CLASSIFY_OTHERS = "其他软件"       # 其他杂项
+CLASSIFY_NEWS = __("Classify News")
+CLASSIFY_RECOMMEND = __("Classify Recommend")
+CLASSIFY_WEB = __("Classify Web")
+CLASSIFY_MULTIMEDIA = __("Classify Multimedia")
+CLASSIFY_GAME = __("Classify Game")
+CLASSIFY_GRAPHICS = __("Classify Graphics")
+CLASSIFY_WORD = __("Classify Word")
+CLASSIFY_PROFESSIONAL = __("Classify Professional")
+CLASSIFY_PROGRAMMING = __("Classify Programming")
+CLASSIFY_DRIVER = __("Classify Driver")
+CLASSIFY_WINDOWS = __("Classify Windows")
+CLASSIFY_OTHERS = __("Classify Others")
 
 CLASSIFY_FILES = [(CLASSIFY_WEB,          "web.txt"),
                   (CLASSIFY_MULTIMEDIA,   "multimedia.txt"),
@@ -88,16 +92,10 @@ CLASSIFY_LIST = [(CLASSIFY_WEB,          ("web.png", None)),
                  (CLASSIFY_OTHERS,       ("other.png", None))
                  ]
 
-LANGUAGE = [
-    "简体中文",
-    "繁体中文",
-    "英语",
-    ]
-
-SOURCE_LANGUAGE = "英语"
-TARGET_LANGUAGE = "简体中文"
-
 SCREENSHOT_DOWNLOAD_DIR = "/var/cache/deepin-software-center/screenshot/"
+UPDATE_DATA_BACKUP_DIR = "../updateData/"
+UPDATE_DATA_DIR = "/var/cache/deepin-software-center/updateData/"
+UPDATE_DATA_DOWNLOAD_DIR = "/var/cache/deepin-software-center/"
 DOWNLOAD_FAILED = 1
 DOWNLOAD_SUCCESS = 0
 
@@ -125,7 +123,16 @@ GET_TIMEOUT = 10                # seconds
 
 ACTION_BUTTON_PADDING_X = 5
 ACTION_BUTTON_PADDING_Y = 5
-ACTION_BUTTON_WIDTH = 100
+lang = getDefaultLanguage()
+if lang == "default":
+    ACTION_BUTTON_WIDTH = 140
+    APP_BASIC_WIDTH_ADJUST = 120
+else:
+    ACTION_BUTTON_WIDTH = 100
+    APP_BASIC_WIDTH_ADJUST = 0
+
+DEFAULT_WINDOW_WIDTH = 890
+DEFAULT_WINDOW_HEIGHT = 631
 
 TOPBAR_PADDING_LEFT = 10
 TOPBAR_PADDING_RIGHT = 40
@@ -134,16 +141,23 @@ TOPBAR_SEARCH_RIGHT = 30
 TOPBAR_SEARCH_ADJUST_RIGHT = 15
 
 SOCKET_SOFTWARECENTER_ADDRESS = ("127.0.0.1", 31500)
-SOCKET_UPDATEMANAGER_ADDRESS  = ("127.0.0.1", 31501)
+SOCKET_UPDATEMANAGER_ADDRESS = ("127.0.0.1", 31501)
+SOCKET_COMMANDPROXY_ADDRESS = ("127.0.0.1", 31502)
 UPDATE_INTERVAL = 24            # in hours
 RADIUS = 6
 POPUP_WINDOW_RADIUS = 4
-THEME_WINDOW_WIDTH = 380
-THEME_WINDOW_HEIGHT = 270
+THEME_WINDOW_WIDTH = 318
+THEME_WINDOW_HEIGHT = 177
 
 DRAW_LOOP = "loop"
 DRAW_EXTEND = "extend"
 DRAW_LEFT = "left"
 DRAW_RIGHT = "right"
 
-SERVER_ADDRESS = "http://test-linux.gteasy.com"
+SCREENSHOT_NONEED = -1
+SCREENSHOT_UPLOAD = 0
+
+COOKIE_FILE = "cookie.txt"
+
+SERVER_ADDRESS = "http://apis.linuxdeepin.com"
+

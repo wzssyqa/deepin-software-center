@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,10 +22,9 @@
 
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
 import gtk
-import pygtk
 import utils
-pygtk.require('2.0')
 
 class Titlebar(object):
     '''Title bar.'''

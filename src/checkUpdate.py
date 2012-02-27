@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
 from utils import *
 import apt
 import apt_pkg
@@ -36,17 +37,23 @@ import stat
 import subprocess
 import sys
 import threading as td
+import urllib
 import urllib2
 
 def sendStatistics():
     '''Send statistics.'''
-    # Send Mac address to server for statistics.
     try:
-        userId = getUserID()
-        connection = urllib2.urlopen(("%s/record.php?i=" % (SERVER_ADDRESS)) + str(userId), timeout=POST_TIMEOUT)
-        print "Send mac address %s success." % (userId)
+        userId = getUniqueId()
+        args = {'a' : 'm', 'n' : userId}
+        
+        connection = urllib2.urlopen(
+            "%s/softcenter/v1/analytics" % (SERVER_ADDRESS),
+            data=urllib.urlencode(args),
+            timeout=POST_TIMEOUT,
+            )
+        connection.read()
     except Exception, e:
-        print "Send mac address %s failed" % (userId)
+        print e
         
 class TrayIcon(object):
     '''Tray icon.'''
@@ -62,7 +69,6 @@ class TrayIcon(object):
         self.times = 20
         self.ticker = 0
         self.interval = 100     # in milliseconds
-        self.tooltipPixbuf = gtk.gdk.pixbuf_new_from_file("../icon/window.png")
         
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # make sure socket port always work
@@ -92,9 +98,11 @@ class TrayIcon(object):
         
         # Draw.
         label = gtk.Label()
-        label.set_markup("<span size='%s'>有%s个软件包可以升级</span>" % (LABEL_FONT_SIZE, self.updateNum))
+        label.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, 
+                                                        (__("There are %s software packages can be upgraded") % (self.updateNum))))
         
         self.tooltipEventBox.add(label)
+        self.tooltipWindow.queue_draw()
         self.tooltipWindow.show_all()
     
     def cursorInIcon(self):
@@ -136,7 +144,7 @@ class TrayIcon(object):
         # Otherwise socket and other resources of current process will keep that 
         # make software center can't works correctly.
         if startup:
-            subprocess.Popen(["gksu", "./deepin-software-center.py", "show-update"])
+            subprocess.Popen(["gksu", "./deepin-software-center.py", "show-update", "--message=" + __("gksu message")])
             
     def exit(self):
         '''Exit'''
@@ -151,7 +159,7 @@ class TrayIcon(object):
             self.tooltipWindow = gtk.Window(gtk.WINDOW_TOPLEVEL)
             self.tooltipWindow.set_decorated(False)
             self.tooltipWindow.set_default_size(self.TOOLTIP_WIDTH, self.TOOLTIP_HEIGHT)
-            self.tooltipWindow.connect("size-allocate", lambda w, a: self.updateShape(w, a))
+            self.tooltipWindow.connect("size-allocate", lambda w, a: updateShape(w, a, 4))
             
             self.tooltipEventBox = gtk.EventBox()
             self.tooltipEventBox.connect("button-press-event", lambda w, e: self.showSoftwareCenter())
@@ -168,21 +176,9 @@ class TrayIcon(object):
             tooltipY = iconRect.y + iconRect.height + self.TOOLTIP_OFFSET_Y
         self.tooltipWindow.set_opacity(0.9)
         self.tooltipWindow.move(tooltipX, tooltipY)
+        self.tooltipWindow.queue_draw()
         self.tooltipWindow.show_all()
         
-    def updateShape(self, widget, allocation):
-        '''Update shape.'''
-        if allocation.width > 0 and allocation.height > 0:
-            
-            width, height = allocation.width, allocation.height
-            
-            pixbuf = gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, True, 8, width, height)
-            self.tooltipPixbuf.copy_area(0, 0, width, height, pixbuf, 0, 0)
-
-            (_, mask) = pixbuf.render_pixmap_and_mask(255)
-            if mask != None:
-                self.tooltipWindow.shape_combine_mask(mask, 0, 0)
-                
     @postGUI
     def finishCheck(self):
         '''Finish check.'''
@@ -192,19 +188,8 @@ class TrayIcon(object):
     def handleRightClick(self, icon, button, time):
         menu = gtk.Menu()
         
-        aboutIcon = gtk.Image()
-        aboutIcon.set_from_file("../icon/about.png")
-        aboutItem = gtk.ImageMenuItem()
-        aboutItem.set_label("关于")
-        aboutItem.set_image(aboutIcon)
-        aboutItem.connect("activate", self.showAboutDialog)
-        menu.append(aboutItem)
-        
-        quitIcon = gtk.Image()
-        quitIcon.set_from_file("../icon/quit.png")
         quitItem = gtk.ImageMenuItem()
-        quitItem.set_label("退出")
-        quitItem.set_image(quitIcon)
+        quitItem.set_label(__("Exit"))
         quitItem.connect("activate", lambda w: self.exit())
         menu.append(quitItem)
         
@@ -212,37 +197,23 @@ class TrayIcon(object):
         
         menu.popup(None, None, gtk.status_icon_position_menu, button, time, self.trayIcon)
         
-    def showAboutDialog(self, widget):
-        aboutDialog = gtk.AboutDialog()
-
-        aboutDialog.set_destroy_with_parent(True)
-        aboutDialog.set_name("深度Linux更新管理器")
-        aboutDialog.set_version(VERSION)
-        aboutDialog.set_authors(AUTHOR)
-        aboutDialog.set_artists(ARTISTS)
-        		
-        aboutDialog.run()
-        aboutDialog.destroy()        
-
     def calculateUpdateNumber(self):
         '''Calculate update number.'''
         apt_pkg.init()
         cache = apt.Cache()
         updateNum = 0
-        ignorePkgs = evalFile("./ignorePkgs")
+        ignorePkgs = evalFile("./ignorePkgs", True)
         for pkg in cache:
-            if pkg.candidate != None and pkg.is_upgradable and not pkg.name in ignorePkgs:
-                updateNum += 1
+            if pkg.candidate != None and pkg.is_upgradable:
+                if ignorePkgs == None or not pkg.name in ignorePkgs:
+                    updateNum += 1
                 
         return updateNum
 
     def main(self):
         '''Main.'''
         # Get input.
-        if len(sys.argv) == 2 and sys.argv[1] == "--now":
-            ignoreInterval = True
-        else:
-            ignoreInterval = False
+        ignoreInterval = len(sys.argv) == 2 and sys.argv[1] == "--now"
         
         # Get last update hours.
         agoHours = getLastUpdateHours("./check-update-stamp")

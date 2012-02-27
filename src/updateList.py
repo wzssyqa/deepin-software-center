@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 #
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,14 +20,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from utils import *
 from apt.progress.old import FetchProgress
-import sys
-import os
+from lang import __, getDefaultLanguage
+from utils import *
+import downloadUpdateData
 import glib
+import os
 import stat
-import time
+import sys
 import threading as td
+import time
 
 class UpdateList(td.Thread):
     '''Update package list.'''
@@ -62,16 +64,19 @@ class UpdateList(td.Thread):
     @postGUI
     def updateCallback(self, percent):
         '''Update callback for progress.'''
-        self.statusbar.setStatus("正在更新软件列表...")
+        self.statusbar.setStatus(__("Updating souces list ..."))
         
     @postGUI
     def finishCallback(self):
         '''Finish callback for progress.'''
         # Update status.
-        self.statusbar.setStatus("更新软件列表完毕。")
+        self.statusbar.setStatus(__("Update sources list completed."))
         
         # Reset statusbar after 2 seconds.
         glib.timeout_add_seconds(2, self.resetStatus)
+        
+        # Download update data from server, this must execute after list update complete.
+        downloadUpdateData.DownloadUpdateData().start()
         
     def resetStatus(self):
         '''Reseet status.'''

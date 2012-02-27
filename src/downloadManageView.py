@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,20 +20,18 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from theme import *
 from appItem import *
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
+from theme import *
 from utils import *
 import appView
-import gtk
 import glib
+import gtk
 import pango
-import pygtk
-import utils
-pygtk.require('2.0')
-
 import urllib2
+import utils
 
 class DownloadManageItem(DownloadItem):
     '''Application item.'''
@@ -67,7 +65,7 @@ class DownloadManageItem(DownloadItem):
         self.itemFrame = gtk.Alignment()
         self.itemFrame.set(0.0, 0.5, 1.0, 1.0)
         
-        self.appBasicBox = createItemBasicBox(self.appInfo, 200, self.itemBox, self.entryDetailView)
+        self.appBasicView = AppBasicView(self.appInfo, 200 + APP_BASIC_WIDTH_ADJUST, self.itemBox, self.entryDetailView)
         
         # Widget that status will change.
         self.installingProgressbar = None
@@ -77,7 +75,7 @@ class DownloadManageItem(DownloadItem):
         self.upgradingFeedbackLabel = None
 
         # Connect components.
-        self.itemBox.pack_start(self.appBasicBox, True, True, self.APP_LEFT_PADDING_X)
+        self.itemBox.pack_start(self.appBasicView.align, True, True, self.APP_LEFT_PADDING_X)
         
         self.appAdditionBox = gtk.HBox()
         self.appAdditionAlign = gtk.Alignment()
@@ -128,7 +126,6 @@ class DownloadManageItem(DownloadItem):
         # Add application vote information.
         self.appVoteView = VoteView(
             self.appInfo, PAGE_DOWNLOAD_MANAGE, 
-            self.entryDetailCallback,
             self.sendVoteCallback)
         self.appAdditionBox.pack_start(self.appVoteView.eventbox, False, False)
         
@@ -145,21 +142,21 @@ class DownloadManageItem(DownloadItem):
         if self.appInfo.status == APP_STATE_NORMAL:
             (appButton, appButtonAlign) = newActionButton(
                 "install", 0.5, 0.5, 
-                "cell", False, "安装", BUTTON_FONT_SIZE_SMALL, "buttonFont"
+                "cell", False, __("Action Install"), BUTTON_FONT_SIZE_SMALL, "buttonFont"
                 )
             appButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
             actionButtonBox.pack_start(appButtonAlign)
         elif self.appInfo.status == APP_STATE_UPGRADE:
             (appButton, appButtonAlign) = newActionButton(
                 "update", 0.5, 0.5, 
-                "cell", False, "升级", BUTTON_FONT_SIZE_SMALL, "buttonFont"
+                "cell", False, __("Action Update"), BUTTON_FONT_SIZE_SMALL, "buttonFont"
                 )
             appButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
             actionButtonBox.pack_start(appButtonAlign)
         else:
             appInstalledDynamicLabel = DynamicSimpleLabel(
                 actionButtonBox,
-                "已安装",
+                __("Action Installed"),
                 appTheme.getDynamicColor("installed"),
                 LABEL_FONT_SIZE,
                 )
@@ -168,10 +165,11 @@ class DownloadManageItem(DownloadItem):
             appInstalledLabel.set_size_request(buttonImage.get_width(), buttonImage.get_height())
             actionButtonBox.pack_start(appInstalledLabel)
     
-    def updateVoteView(self, starLevel, voteNum):
+    def updateVoteView(self, starLevel, commentNum):
         '''Update vote view.'''
         if self.appInfo.status in [APP_STATE_NORMAL, APP_STATE_UPGRADE, APP_STATE_INSTALLED] and self.appVoteView != None:
-            self.appVoteView.updateVote(starLevel, voteNum)
+            self.appVoteView.updateVote(starLevel, commentNum)
+            self.appBasicView.updateCommentNum(commentNum)
                 
 class DownloadManageView(appView.AppView):
     '''Application view.'''
@@ -209,27 +207,30 @@ class DownloadManageView(appView.AppView):
         self.itemDict.clear()
         
         if self.appNum == 0:
-            notifyBox = gtk.HBox()
+            if (getDefaultLanguage() == "default"):
+                paddingX = 10
+            else:
+                paddingX = 45
+            
+            notifyBox = gtk.VBox()
             notifyAlign = gtk.Alignment()
             notifyAlign.set(0.5, 0.5, 0.0, 0.0)
             notifyAlign.add(notifyBox)
             self.box.pack_start(notifyAlign)
             
-            notifyIconAlignX = 5
-            notifyIcon = gtk.EventBox()
-            notifyIcon.set_visible_window(False)
-            simpleButtonSetBackground(notifyIcon, False, False, appTheme.getDynamicPixbuf("update/smile.gif"))
-            notifyIconAlign = gtk.Alignment()
-            notifyIconAlign.set(0.5, 1.0, 0.0, 0.0)
-            notifyIconAlign.set_padding(0, 0, notifyIconAlignX, notifyIconAlignX)
-            notifyIconAlign.add(notifyIcon)
-            notifyBox.pack_start(notifyIconAlign)
+            tipImage = gtk.image_new_from_pixbuf(
+                gtk.gdk.pixbuf_new_from_file("../icon/tips/%s/downloadTip.png" % (getDefaultLanguage())))
+            tipAlign = gtk.Alignment()
+            tipAlign.set_padding(0, 0, paddingX, 0)
+            tipAlign.add(tipImage)
+            notifyBox.pack_start(tipAlign)
             
-            notifyLabel = gtk.Label()
-            notifyLabel.set_markup(
-                "<span foreground='#1A38EE' size='%s'>%s</span>"
-                % (LABEL_FONT_XXX_LARGE_SIZE, "没有下载任务. :)"))
-            notifyBox.pack_start(notifyLabel, False, False)
+            penguinImage = gtk.image_new_from_pixbuf(
+                gtk.gdk.pixbuf_new_from_file("../icon/tips/penguin.png"))
+            penguinAlign = gtk.Alignment()
+            penguinAlign.set_padding(0, 0, 0, paddingX)
+            penguinAlign.add(penguinImage)
+            notifyBox.pack_start(penguinAlign)
             
             self.box.show_all()
         else:

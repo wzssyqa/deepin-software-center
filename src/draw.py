@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,9 +20,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from theme import *
 from constant import *
+from lang import __, getDefaultLanguage
 from math import pi
+from theme import *
 from utils import *
 import cairo
 import gtk
@@ -31,8 +32,6 @@ import os
 import pango
 import pangocairo
 import progressbar as pb
-import pygtk
-pygtk.require('2.0')
 
 def eventBoxSetBackground(widget, scaleX, scaleY, dPixbuf):
     '''Set event box's background.'''
@@ -237,7 +236,7 @@ def navButtonSetBackground(widget,
     hoverDPixbuf = appTheme.getDynamicPixbuf(hoverImg)
     
     requestWidth = hoverDPixbuf.getPixbuf().get_width()
-    requestHeight = hoverDPixbuf.getPixbuf().get_height()
+    requestHeight = hoverDPixbuf.getPixbuf().get_height() 
     widget.set_size_request(requestWidth, requestHeight)
     
     widget.connect("expose-event", lambda w, e: navButtonOnExpose(
@@ -287,14 +286,7 @@ def navButtonOnExpose(widget, event,
     drawPixbuf(cr, navPixbuf, 
                x + (backgroundWidth - navWidth) / 2, 
                y)
-
-    # Draw font.
-    fontSize = 16
     
-    drawFont(cr, navName, fontSize, "#FFFFFF",
-             x + backgroundWidth / 2 - fontSize * 2, 
-             y + (backgroundHeight + navHeight) / 2)
-
     if widget.get_child() != None:
         widget.propagate_expose(widget.get_child(), event)
 
@@ -320,18 +312,18 @@ def themeIconOnExpose(widget, event, pixbuf, selectDPixbuf, hoverDColor, pressDC
     if widget.state == gtk.STATE_ACTIVE or index == getIndex():
         # Draw select pixbuf.
         selectPixbuf = selectDPixbuf.getPixbuf()
-        drawPixbuf(cr, selectPixbuf, rect.x + rect.width - selectPixbuf.get_width() - 1, rect.y)
-        
-        # Draw press frame.
+        drawPixbuf(cr, selectPixbuf, rect.x + rect.width - selectPixbuf.get_width() - 3, rect.y + 3)
+    if widget.state == gtk.STATE_PRELIGHT:
+        # Draw Hover frame.
+        cr.set_line_width(2)
+        cr.set_source_rgb(*colorHexToCairo(hoverDColor.getColor()))
+        cr.rectangle(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
+        cr.stroke()
+    else:
+        # Draw frame.
         cr.set_line_width(1)
         cr.set_source_rgb(*colorHexToCairo(pressDColor.getColor()))
-        cr.rectangle(rect.x, rect.y, rect.width, rect.height - 1)
-        cr.stroke()
-    elif widget.state == gtk.STATE_PRELIGHT:
-        # Hover status.
-        cr.set_line_width(1)
-        cr.set_source_rgb(*colorHexToCairo(hoverDColor.getColor()))
-        cr.rectangle(rect.x, rect.y, rect.width, rect.height - 1)
+        cr.rectangle(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
         cr.stroke()
 
     if widget.get_child() != None:
@@ -434,13 +426,6 @@ def updateButtonOnExpose(
     elif upgradableNum != 0:
         print "Upgradable number out of bound (1 ~ 100000): %s" % (upgradableNum)
     
-    # Draw font.
-    fontSize = 16
-
-    drawFont(cr, navName, fontSize, "#FFFFFF",
-             x + backgroundWidth / 2 - fontSize * 2, 
-             y + (backgroundHeight + navHeight) / 2)
-
     if widget.get_child() != None:
         widget.propagate_expose(widget.get_child(), event)
 
@@ -449,27 +434,37 @@ def updateButtonOnExpose(
 def sideButtonSetBackground(widget, 
                             navName, navImg,
                             normalImg, hoverImg, pressImg,
-                            pageId, getPageId):
+                            getCategoryNumCallback, pageId, getPageId):
     '''Set event box's background.'''
+    (navTextWidth, _) = gtk.Label(navName).get_layout().get_pixel_size()
+    middlePadding = 14
+    navPixbufWidth = appTheme.getDynamicPixbuf(navImg).getPixbuf().get_width()
     widget.set_size_request(
-        appTheme.getDynamicPixbuf(hoverImg).getPixbuf().get_width(),
+        navTextWidth + middlePadding * 4 + navPixbufWidth,
         appTheme.getDynamicPixbuf(hoverImg).getPixbuf().get_height())
     
     widget.connect("expose-event", lambda w, e: sideButtonOnExpose(
             w, e,
             navName, 
+            navTextWidth,
             appTheme.getDynamicColor("sideButton"),
             appTheme.getDynamicPixbuf(navImg),
             appTheme.getDynamicPixbuf(normalImg),
             appTheme.getDynamicPixbuf(hoverImg),
             appTheme.getDynamicPixbuf(pressImg),
+            getCategoryNumCallback,
             pageId, getPageId))
         
 def sideButtonOnExpose(widget, event, 
-                       navName, dColor,
+                       navName, navTextWidth, dColor,
                        navDPixbuf, normalDPixbuf, hoverDPixbuf, pressDPixbuf,
+                       getCategoryNumCallback,
                        pageId, getPageId):
     '''Expose function to replace event box's image.'''
+    # Init.
+    fontSize = 14
+    middlePadding = 14
+    
     navPixbuf = navDPixbuf.getPixbuf()
     normalPixbuf = normalDPixbuf.getPixbuf()
     hoverPixbuf = hoverDPixbuf.getPixbuf()
@@ -477,7 +472,7 @@ def sideButtonOnExpose(widget, event,
     
     selectPageId = getPageId()
     
-    backgroundWidth = pressPixbuf.get_width()
+    backgroundWidth = widget.allocation.width
     backgroundHeight = widget.allocation.height
     
     if widget.state == gtk.STATE_NORMAL:
@@ -496,24 +491,49 @@ def sideButtonOnExpose(widget, event,
     pixbuf = image.scale_simple(backgroundWidth, backgroundHeight, gtk.gdk.INTERP_BILINEAR)
     
     x, y = widget.allocation.x, widget.allocation.y
-    fontSize = 14
-    middlePadding = 14
     
     cr = widget.window.cairo_create()
     
+    # Draw background.
     drawPixbuf(cr, pixbuf, x, y)
     offset = 20
 
+    # Draw nav icon.
     navWidth = navPixbuf.get_width()
     navHeight = navPixbuf.get_height()
     drawPixbuf(cr,
                navPixbuf, 
-               x + (backgroundWidth - navWidth - fontSize * 2 - middlePadding) / 2 - offset,
+               x + middlePadding,
                y + (backgroundHeight - navHeight) / 2)
+    
+    
+    # Init.
+    if selectPageId == pageId:
+        offsetX = 1
+        upgradableNum = getCategoryNumCallback(navName)
+        numPixbuf = appTheme.getDynamicPixbuf("navigate/0.png").getPixbuf()
+        numbarPixbuf = appTheme.getDynamicPixbuf("category/numbar.png").getPixbuf()
+        numBgLeftHeight = numbarPixbuf.get_height()    
+        numWidth = numPixbuf.get_width()                  
+        numHeight = numPixbuf.get_height()                
+        numLen = len(str(upgradableNum))        
+        numX = x + middlePadding + offsetX
+        numY = y + (backgroundHeight + navHeight) / 2 - numBgLeftHeight
+        
+        # Draw number background.
+        drawPixbuf(cr, numbarPixbuf, numX, numY)
+        
+        # Draw number.
+        for (i, c) in enumerate(str(upgradableNum)):
+            numPixbuf = appTheme.getDynamicPixbuf("navigate/%s.png" % c).getPixbuf()
+            drawPixbuf(cr, numPixbuf,
+                       numX + (navWidth - numLen * numWidth) / 2 + i * numWidth,
+                       numY + (numBgLeftHeight - numHeight) / 2)
 
+    # Draw font.
     color = dColor.getColor()
     drawFont(cr, navName, fontSize, color,
-             x + (backgroundWidth - navWidth - fontSize * 2 - middlePadding) / 2 + navWidth + middlePadding - offset,
+             x + navWidth + middlePadding * 2,
              getFontYCoordinate(y, backgroundHeight, fontSize))
 
     if widget.get_child() != None:
@@ -572,6 +592,24 @@ def drawVerticalLineExpose(widget, event):
     
     return True
 
+def drawHLine(widget, dColor):
+    '''Draw horizontal line.'''
+    widget.connect("expose-event", 
+                   lambda w, e: drawHLineExpose(w, e, dColor))
+    
+def drawHLineExpose(widget, event, dColor):
+    '''Draw horizontal line expose.'''
+    color = dColor.getColor()
+    rect = widget.allocation
+    
+    cr = widget.window.cairo_create()
+    pixbuf = appTheme.getDynamicPixbuf("detail/pix.png").getPixbuf().scale_simple(rect.width, 1, gtk.gdk.INTERP_BILINEAR)
+    drawPixbuf(cr, pixbuf, rect.x, rect.y)
+    
+    cr.stroke()
+
+    return True
+
 def drawLine(widget, dColor,
              lineWidth, vertical=True, lineType=None):
     '''Draw line.'''
@@ -590,17 +628,16 @@ def drawLineExpose(widget, event, dColor, lineWidth, vertical, lineType):
     cr = widget.window.cairo_create()
     cr.set_line_width(lineWidth)
     cr.set_source_rgb(*colorHexToCairo(color))
-    cr.set_operator(cairo.OPERATOR_SOURCE)
-    
-    if lineType in [LINE_TOP, LINE_BOTTOM]:
-        xAdjust = 0
-        yAdjust = 1
-    elif lineType in [LINE_LEFT, LINE_RIGHT]:
+
+    if lineType == LINE_LEFT:
         xAdjust = 1
+        yAdjust = 0
+    elif lineType == LINE_RIGHT:
+        xAdjust = 0
         yAdjust = 0
     else:
         xAdjust = 0
-        yAdjust = 0
+        yAdjust = -1
     
     if vertical:
         cr.move_to(rect.x + xAdjust, rect.y)
@@ -652,6 +689,29 @@ def listItemOnExpose(widget, event,
     if widget.get_child() != None:
         widget.propagate_expose(widget.get_child(), event)
 
+    return True
+
+def drawSmallScreenshotBackground(widget, width, height, dPixbuf):
+    '''Draw small screenshot background.'''
+    widget.set_size_request(width, height)
+    
+    widget.connect("expose-event", lambda w, e: exposeSmallScreenshotBackground(w, e, dPixbuf))
+
+def exposeSmallScreenshotBackground(widget, event, dPixbuf):
+    '''Expose small screenshot background.'''
+    cr = widget.window.cairo_create()
+    rect = widget.allocation
+    pixbuf = dPixbuf.getPixbuf()
+    
+    drawPixbuf(
+        cr, pixbuf, 
+        rect.x + (rect.width - pixbuf.get_width()) / 2, 
+        rect.y + (rect.height - pixbuf.get_height()) / 2,
+        )
+        
+    if widget.get_child() != None:
+        widget.propagate_expose(widget.get_child(), event)
+        
     return True
 
 def drawBackground(widget, event, dColor, borderColor=None, borderWidth=3):
@@ -712,22 +772,22 @@ def drawDetailItemBackgroundOnExpose(
 
 def drawRoundRectangle(cr, x, y, width, height, r):
     '''Draw round rectangle.'''
-    cr.move_to(x + r, y);
-    cr.line_to(x + width - r, y);
+    cr.move_to(x + r, y)
+    cr.line_to(x + width - r, y)
 
-    cr.move_to(x + width, y + r);
-    cr.line_to(x + width, y + height - r);
+    cr.move_to(x + width, y + r)
+    cr.line_to(x + width, y + height - r)
 
-    cr.move_to(x + width - r, y + height);
-    cr.line_to(x + r, y + height);
+    cr.move_to(x + width - r, y + height)
+    cr.line_to(x + r, y + height)
 
-    cr.move_to(x, y + height - r);
-    cr.line_to(x, y + r);
+    cr.move_to(x, y + height - r)
+    cr.line_to(x, y + r)
 
-    cr.arc(x + r, y + r, r, pi, 3 * pi / 2.0);
-    cr.arc(x + width - r, y + r, r, 3 * pi / 2, 2 * pi);
-    cr.arc(x + width - r, y + height - r, r, 0, pi / 2);
-    cr.arc(x + r, y + height - r, r, pi / 2, pi);
+    cr.arc(x + r, y + r, r, pi, 3 * pi / 2.0)
+    cr.arc(x + width - r, y + r, r, 3 * pi / 2, 2 * pi)
+    cr.arc(x + width - r, y + height - r, r, 0, pi / 2)
+    cr.arc(x + r, y + height - r, r, pi / 2, pi)
 
 def drawFrame(cr, x, y, width, height):
     '''Draw frame.'''
@@ -920,78 +980,6 @@ def titlebarOnExpose(widget, event,
 
     return True
 
-def toggleTabSetBackground(widget, scaleX, scaleY, 
-                           activeImg, inactiveImg,
-                           activeContent, inactiveContent
-                           ):
-    '''Set event box's background.'''
-    if scaleX:
-        requestWidth = -1
-    else:
-        requestWidth = appTheme.getDynamicPixbuf(activeImg).getPixbuf().get_width()
-        
-    if scaleY:
-        requestHeight = -1
-    else:
-        requestHeight = appTheme.getDynamicPixbuf(activeImg).getPixbuf().get_height()
-    
-    widget.set_size_request(requestWidth, requestHeight)
-    
-    widget.connect("expose-event", lambda w, e: toggleTabOnExpose(
-            w, e,
-            scaleX, scaleY,
-            appTheme.getDynamicPixbuf(activeImg),
-            appTheme.getDynamicPixbuf(inactiveImg),
-            activeContent, inactiveContent))
-        
-def toggleTabOnExpose(widget, event, 
-                      scaleX, scaleY,
-                      activeDPixbuf, inactiveDPixbuf,
-                      activeContent, inactiveContent):
-    '''Expose function to replace event box's image.'''
-    activePixbuf = activeDPixbuf.getPixbuf()
-    inactivePixbuf = inactiveDPixbuf.getPixbuf()
-    
-    if widget.get_active():
-        image = activePixbuf
-        leftTabFontColor = "#FFFFFF"
-        rightTabFontColor = "#333333"
-    else:
-        image = inactivePixbuf
-        leftTabFontColor = "#333333"
-        rightTabFontColor = "#FFFFFF"
-    
-    if scaleX:
-        imageWidth = widget.allocation.width
-    else:
-        imageWidth = image.get_width()
-        
-    if scaleY:
-        imageHeight = widget.allocation.height
-    else:
-        imageHeight = image.get_height()
-    
-    x, y, width, height = widget.allocation.x, widget.allocation.y, widget.allocation.width, widget.allocation.height
-    pixbuf = image.scale_simple(imageWidth, imageHeight, gtk.gdk.INTERP_BILINEAR)
-    
-    cr = widget.window.cairo_create()
-    drawPixbuf(cr, pixbuf, widget.allocation.x, widget.allocation.y)
-    
-    fontSize = 14
-    
-    drawFont(cr, activeContent, fontSize, leftTabFontColor,
-             x + (width / 2 - fontSize * 4) / 2, 
-             getFontYCoordinate(y, height, fontSize))
-    
-    drawFont(cr, inactiveContent, fontSize, rightTabFontColor,
-             x + width / 2 + (width / 2 - fontSize * 4) / 2, 
-             getFontYCoordinate(y, height, fontSize))
-    
-    if widget.get_child() != None:
-        widget.propagate_expose(widget.get_child(), event)
-
-    return True
-
 def alphaColorHexToCairo((color, alpha)):
     '''Alpha color hext to cairo color.'''
     (r, g, b) = colorHexToCairo(color)
@@ -1064,6 +1052,18 @@ def drawListItem(widget, index, getSelectIndex, selectable=True):
             )
     except Exception, e:
         print "Ignore exception in drawListItem."
+
+def drawRecommendItem(widget, index, getSelectIndex):
+    '''Draw list item.'''
+    try:
+        listItemSetBackground(
+            widget,
+            "recommend/list_item.png",
+            "recommend/list_item.png",
+            index, getSelectIndex
+            )
+    except Exception, e:
+        print "Ignore exception in drawListItem."
     
 def drawTitlebar(widget):
     '''Draw title bar.'''
@@ -1121,16 +1121,16 @@ def drawVScrollbar(scrolledWindow):
     vScrollbar = scrolledWindow.get_vscrollbar()
     vAdjust = scrolledWindow.get_vadjustment()
     vScrollbar.set_size_request(
-        appTheme.getDynamicPixbuf("progress/progress_bg.png").getPixbuf().get_width(), 
+        appTheme.getDynamicPixbuf("scrollbar/vscrollbar_bg.png").getPixbuf().get_width(), 
         -1)
     vScrollbar.connect(
         "expose-event", 
         lambda w, e: drawVScrollbarOnExpose(
             w, e, vAdjust,
-            appTheme.getDynamicPixbuf("progress/progress_bg.png"),
-            appTheme.getDynamicPixbuf("progress/progress_fg_top.png"),
-            appTheme.getDynamicPixbuf("progress/progress_fg_middle.png"),
-            appTheme.getDynamicPixbuf("progress/progress_fg_bottom.png"),
+            appTheme.getDynamicPixbuf("scrollbar/vscrollbar_bg.png"),
+            appTheme.getDynamicPixbuf("scrollbar/vscrollbar_fg_top.png"),
+            appTheme.getDynamicPixbuf("scrollbar/vscrollbar_fg_middle.png"),
+            appTheme.getDynamicPixbuf("scrollbar/vscrollbar_fg_bottom.png"),
             ))
     
 def drawVScrollbarOnExpose(
@@ -1152,7 +1152,8 @@ def drawVScrollbarOnExpose(
     upper = adjust.get_upper()
     value = adjust.get_value()
     pageSize = adjust.get_page_size()
-    progressHeight = int(rect.height / (upper - lower) * rect.height)
+    minHeight = fgTopPixbuf.get_height() + fgMiddlePixbuf.get_height() + fgBottomPixbuf.get_height()
+    progressHeight = max(int(rect.height / (upper - lower) * rect.height), minHeight)    
     
     # Get cairo.
     cr = widget.window.cairo_create()
@@ -1234,55 +1235,6 @@ def updateShape(widget, allocation, radius):
         cr.fill()
         
         widget.shape_combine_mask(bitmap, 0, 0)
-        
-def drawExtendBackground(widget, dPixbuf):
-    '''Draw extend background.'''
-    widget.set_size_request(-1, dPixbuf.getPixbuf().get_height())
-    
-    widget.connect_after("expose-event", lambda w, e: exposeExtendBackground(w, e, dPixbuf))
-    
-def exposeExtendBackground(widget, event, dPixbuf):
-    '''Expose extend background.'''
-    w, h = widget.allocation.width, widget.allocation.height
-    cr = widget.window.cairo_create()
-    pixbuf = dPixbuf.getPixbuf()
-    pixbufWidth = pixbuf.get_width()
-    
-    # cr.set_source_rgb(*colorHexToCairo("#FFF8E5"))
-    cr.set_source_rgb(*colorHexToCairo("#2991DA"))
-    cr.rectangle(0, 0, w - pixbufWidth, h)
-    cr.fill()
-    
-    cr.set_source_pixbuf(pixbuf, w - pixbufWidth, 0)
-    cr.paint()
-    
-    if widget.get_child() != None:
-        widget.propagate_expose(widget.get_child(), event)
-
-    return True
-
-def drawLoopBackground(widget, dPixbuf):
-    '''Draw extend background.'''
-    widget.set_size_request(-1, dPixbuf.getPixbuf().get_height())
-    
-    widget.connect_after("expose-event", lambda w, e: exposeLoopBackground(w, e, dPixbuf))
-    
-def exposeLoopBackground(widget, event, dPixbuf):
-    '''Expose extend background.'''
-    w, h = widget.allocation.width, widget.allocation.height
-    cr = widget.window.cairo_create()
-    pixbuf = dPixbuf.getPixbuf()
-    pixbufWidth = pixbuf.get_width()
-    times = int(math.ceil(w / float(pixbufWidth)))
-    
-    for index in range(0, times):
-        cr.set_source_pixbuf(pixbuf, pixbufWidth * index, 0)
-        cr.paint()
-    
-    if widget.get_child() != None:
-        widget.propagate_expose(widget.get_child(), event)
-
-    return True
 
 def drawNavigateBackground(widget, dPixbuf, dType, frameLightColor, bottomColor):
     '''Draw extend background.'''
@@ -1495,6 +1447,254 @@ def moreWindowOnExpose(widget, event, dPixbuf, frameLightColor):
     
     # Draw frame.
     drawFrame(cr, 0, 0, w, h)
+    
+    if widget.get_child() != None:
+        widget.propagate_expose(widget.get_child(), event)
+
+    return True
+
+def exposeSmallScreenshot(widget, event, pixbuf, index, getIndex):
+    '''Expose small screenshot.'''
+    # Init.
+    cr = widget.window.cairo_create()
+    rect = widget.allocation
+    
+    # Draw pixbuf.
+    if index == getIndex():
+        alpha = 1.0
+    else:
+        alpha = 0.5
+    drawPixbuf(
+        cr, 
+        pixbuf, 
+        rect.x + (rect.width - pixbuf.get_width()) / 2, 
+        rect.y + (rect.height - pixbuf.get_height()) / 2,
+        alpha,
+        )
+    
+    if widget.get_child() != None:
+        widget.propagate_expose(widget.get_child(), event)
+
+    return True
+    
+def setClickableCursor(widget):
+    '''Set click-able cursor.'''
+    # Use widget in lambda, and not widget pass in function.
+    # Otherwise, if widget free before callback, you will got error:
+    # free variable referenced before assignment in enclosing scope, 
+    widget.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
+    widget.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
+        
+def setCursor(widget, cursorType):
+    '''Set cursor.'''
+    widget.window.set_cursor(gtk.gdk.Cursor(cursorType))
+    
+    return False
+
+def setDefaultCursor(widget):
+    '''Set default cursor.'''
+    widget.window.set_cursor(None)
+    
+    return False
+
+def setLabelEntryMarkup(label, hoverMarkup, selectMarkup, labelId, getCurrentId):
+    '''Set label markup color.'''
+    if labelId == getCurrentId():
+        setMarkup(label, selectMarkup)
+    else:
+        setMarkup(label, hoverMarkup)    
+        
+def setLabelLeaveMarkup(label, normalMarkup, selectMarkup, labelId, getCurrentId):
+    '''Set label markup color.'''
+    if labelId == getCurrentId():
+        setMarkup(label, selectMarkup)
+    else:
+        setMarkup(label, normalMarkup)    
+
+def setClickableDynamicLabel(widget, dLabel, resetAfterClick=True):
+    '''Set click-able label.'''
+    # Set label markup.
+    widget.connect("enter-notify-event", lambda w, e: dLabel.hoverLabel())
+    widget.connect("leave-notify-event", lambda w, e: dLabel.normalLabel())
+    
+    # Set label cursor.
+    widget.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
+    widget.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
+    
+    # Reset color when click widget.
+    if resetAfterClick:
+        widget.connect("button-press-event", lambda w, e: dLabel.normalLabel())
+        
+def setCustomizeClickableCursor(eventbox, widget, cursorDPixbuf):
+    '''Set click-able cursor.'''
+    eventbox.connect("enter-notify-event", lambda w, e: setCustomizeCursor(widget, cursorDPixbuf))
+    eventbox.connect("leave-notify-event", lambda w, e: setDefaultCursor(widget))
+        
+def setCustomizeCursor(widget, cursorDPixbuf, x=0, y=0):
+    '''Set cursor.'''
+    widget.window.set_cursor(gtk.gdk.Cursor(gtk.gdk.display_get_default(),
+                                            cursorDPixbuf.getPixbuf(),
+                                            x, y))
+    return False
+    
+def setMarkup(label, markup):
+    '''Set markup.'''
+    label.set_markup(markup)
+    
+    return False
+
+def setDefaultRadioButton(content, status, setStatus, getStatus, updateRadioStatus):
+    '''Set default toggle button.'''
+    box = gtk.HBox()
+    
+    padding = 5
+    radioEventBox = gtk.EventBox()
+    radioEventBox.set_visible_window(False)
+    selectDPixbuf = appTheme.getDynamicPixbuf("topbar/select.png")
+    unselectDPixbuf = appTheme.getDynamicPixbuf("topbar/unselect.png")
+    radioEventBox.set_size_request(selectDPixbuf.getPixbuf().get_width(), selectDPixbuf.getPixbuf().get_height())
+    radioEventBox.connect("expose-event", lambda w, e: radioButtonOnExpose(
+            w, e,
+            selectDPixbuf, unselectDPixbuf,
+            status, getStatus))
+    radioEventBoxAlign = gtk.Alignment()
+    radioEventBoxAlign.set(0.5, 0.5, 0.0, 0.0)
+    radioEventBoxAlign.set_padding(padding, padding, padding, padding)
+    radioEventBoxAlign.add(radioEventBox)
+    box.pack_start(radioEventBoxAlign, True, True)
+    
+    label = gtk.Label()
+    label.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, content))
+    label.set_alignment(0.0, 0.5)
+    box.pack_start(label, False, False)
+
+    eventbox = gtk.EventBox()
+    eventbox.add(box)
+    eventbox.set_visible_window(False)
+    eventbox.connect("button-press-event", lambda w, e: setStatus(status))
+    eventbox.connect("button-press-event", lambda w, e: updateRadioStatus())
+    eventbox.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
+    eventbox.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
+
+    return (eventbox, radioEventBox)
+
+def radioButtonOnExpose(widget, event, selectDPixbuf, unselectDPixbuf, status, getStatus):
+    '''Expose toggle button.'''
+    cr = widget.window.cairo_create()
+    rect = widget.allocation
+    
+    if (status == getStatus()):
+        pixbuf = selectDPixbuf.getPixbuf()
+    else:
+        pixbuf = unselectDPixbuf.getPixbuf()
+        
+    drawPixbuf(cr, pixbuf, rect.x, rect.y)
+    
+    if widget.get_child() != None:
+        widget.propagate_expose(widget.get_child(), event)
+
+    return True
+
+def setIconLabelButton(content, normalDPixbuf, hoverDPixbuf, iconPadding):
+    '''Set icon label button.'''
+    iconBox = gtk.Button()
+    pixbuf = normalDPixbuf.getPixbuf()
+    (textWidth, _) = gtk.Label(content).get_layout().get_pixel_size()
+    iconBox.set_size_request(pixbuf.get_width() + textWidth + iconPadding * 2, pixbuf.get_height())
+    iconBox.connect("expose-event", 
+                    lambda w, e: iconLabelButtonOnExpose(w, e, content, textWidth, normalDPixbuf, hoverDPixbuf, iconPadding))
+    iconBox.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
+    iconBox.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
+    
+    return iconBox
+
+def iconLabelButtonOnExpose(widget, event, content, textWidth, normalDPixbuf, hoverDPixbuf, iconPadding):
+    '''Icon label button on expose.'''
+    cr = widget.window.cairo_create()
+    rect = widget.allocation
+    
+    if widget.state == gtk.STATE_NORMAL:
+        pixbuf = normalDPixbuf.getPixbuf()
+    elif widget.state == gtk.STATE_PRELIGHT:
+        pixbuf = hoverDPixbuf.getPixbuf()
+    elif widget.state == gtk.STATE_ACTIVE:
+        pixbuf = hoverDPixbuf.getPixbuf()
+    drawPixbuf(cr, pixbuf, rect.x + iconPadding, rect.y)
+    
+    fontSize = 14
+    drawFont(cr, content, fontSize, appTheme.getDynamicColor("foreground").getColor(),
+             rect.x + pixbuf.get_width() + iconPadding * 2, getFontYCoordinate(rect.y, rect.height, fontSize))
+    
+    if widget.get_child() != None:
+        widget.propagate_expose(widget.get_child(), event)
+
+    return True
+
+def setNumButton(pageIndex, index, hoverDPixbuf, pressDPixbuf):
+    '''Set num icon.'''
+    numButton = gtk.Button()
+    pixbuf = hoverDPixbuf.getPixbuf()
+    numButton.connect("expose-event", lambda w, e: numButtonOnExpose(w, e, pageIndex, index, hoverDPixbuf, pressDPixbuf))
+    numButton.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
+    numButton.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
+    
+    numLabel = gtk.Label()
+    numLabel.set_markup("<span foreground='%s' size='%s'>%s</span>" % (
+                        appTheme.getDynamicColor("index").getColor(),
+                        LABEL_FONT_MEDIUM_SIZE, index))
+    numButton.add(numLabel)
+
+    return numButton
+
+def numButtonOnExpose(widget, event, pageIndex, index, hoverDPixbuf, pressDPixbuf):
+    '''Num button on expose.'''
+    cr = widget.window.cairo_create()
+    rect = widget.allocation
+    
+    if widget.state == gtk.STATE_NORMAL:
+        if pageIndex == index:
+            image = pressDPixbuf.getPixbuf()
+        else:
+            image = None
+    elif widget.state == gtk.STATE_PRELIGHT:
+        image = hoverDPixbuf.getPixbuf()
+    elif widget.state == gtk.STATE_ACTIVE:
+        image = pressDPixbuf.getPixbuf()
+        
+    if (image):
+        if (index >= 10):
+            drawPixbuf(cr, image, rect.x + 3, rect.y + 5)
+        else:
+            drawPixbuf(cr, image, rect.x, rect.y + 5)
+    
+    if widget.get_child() != None:
+        widget.propagate_expose(widget.get_child(), event)
+
+    return True
+
+def setHoverButton(normalDPixbuf, hoverDPixbuf):
+    '''Set hover icon.'''
+    hoverButton = gtk.Button()
+    pixbuf = hoverDPixbuf.getPixbuf()
+    hoverButton.connect("expose-event", lambda w, e: hoverButtonOnExpose(w, e, normalDPixbuf, hoverDPixbuf))
+    hoverButton.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
+    hoverButton.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
+    
+    return hoverButton
+
+def hoverButtonOnExpose(widget, event, normalDPixbuf, hoverDPixbuf):
+    '''Hover button on expose.'''
+    cr = widget.window.cairo_create()
+    rect = widget.allocation
+    
+    if widget.state == gtk.STATE_NORMAL:
+        image = normalDPixbuf.getPixbuf()
+    elif widget.state == gtk.STATE_PRELIGHT:
+        image = hoverDPixbuf.getPixbuf()
+    elif widget.state == gtk.STATE_ACTIVE:
+        image = normalDPixbuf.getPixbuf()
+        
+    drawPixbuf(cr, image, rect.x, rect.y)
     
     if widget.get_child() != None:
         widget.propagate_expose(widget.get_child(), event)

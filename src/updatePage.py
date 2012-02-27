@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,11 +22,10 @@
 
 from appItem import *
 from draw import *
+from lang import __, getDefaultLanguage
 import gtk
-import pygtk
 import updateView
 import utils
-pygtk.require('2.0')
 
 class UpdatePage(object):
     '''Interface for update page.'''
@@ -71,10 +70,8 @@ class Topbar(object):
         # Init.
         self.repoCache = repoCache
         self.paddingX = 5
-        self.numColor = '#006efe'
-        self.normalColor = '#1A3E88'
-        self.hoverColor = '#0084FF'
-        self.selectColor = '#000000'
+        self.selectAllPkgCallback = selectAllPkgCallback
+        self.unselectAllPkgCallback = unselectAllPkgCallback
         self.showIgnorePageCallback = showIgnorePageCallback
         
         self.box = gtk.HBox()
@@ -101,19 +98,19 @@ class Topbar(object):
         self.unselectAllId = "unselectAll"
         self.labelId = self.selectAllId
         
-        (self.selectAllLabel, self.selectAllEventBox) = utils.setDefaultToggleLabel(
-            "全选", self.selectAllId, self.setLabelId, self.getLabelId, True)
-        self.selectAllEventBox.connect("button-press-event", lambda w, e: selectAllPkgCallback())
-        upgradeBox.pack_start(self.selectAllEventBox, False, False, self.paddingX)
+        (self.selectAllBox, self.selectAllEventBox) = setDefaultRadioButton(
+            __("Select All"), self.selectAllId, self.setLabelId, self.getLabelId, self.selectAllPkgStatus
+            )
+        upgradeBox.pack_start(self.selectAllBox, False, False, self.paddingX)
         
-        (self.unselectAllLabel, self.unselectAllEventBox) = utils.setDefaultToggleLabel(
-            "全不选", self.unselectAllId, self.setLabelId, self.getLabelId, False)
-        self.unselectAllEventBox.connect("button-press-event", lambda w, e: unselectAllPkgCallback())
-        upgradeBox.pack_start(self.unselectAllEventBox, False, False, self.paddingX)
+        (self.unselectAllBox, self.unselectAllEventBox) = setDefaultRadioButton(
+            __("Unselect All"), self.unselectAllId, self.setLabelId, self.getLabelId, self.unselectAllPkgStatus
+            )
+        upgradeBox.pack_start(self.unselectAllBox, False, False, self.paddingX)
         
         (self.upgradeButton, upgradeButtonAlign) = newActionButton(
-             "update_selected", 0.0, 0.5, "cell", True, "升级选中的软件", BUTTON_FONT_SIZE_MEDIUM, "bigButtonFont")
-        upgradeBox.pack_start(upgradeButtonAlign, False, False, self.paddingX)
+             "search", 0.0, 0.5, "cell", False, __("Action Update"), BUTTON_FONT_SIZE_MEDIUM, "bigButtonFont")
+        upgradeBox.pack_start(upgradeButtonAlign, False, False, 26)
         self.upgradeButton.connect("button-press-event", lambda w, e: upgradeSelectedPkgsCallback(getSelectListCallback()))
         
         # Connect.
@@ -126,20 +123,23 @@ class Topbar(object):
         
         self.updateIgnoreNum(self.repoCache.getIgnoreNum())
         
+    def selectAllPkgStatus(self):
+        '''Select all pkg status.'''
+        self.selectAllEventBox.queue_draw()
+        self.unselectAllEventBox.queue_draw()
+    
+        self.selectAllPkgCallback()
+
+    def unselectAllPkgStatus(self):
+        '''Select all pkg status.'''
+        self.selectAllEventBox.queue_draw()
+        self.unselectAllEventBox.queue_draw()
+    
+        self.unselectAllPkgCallback()
+        
     def setLabelId(self, lId):
         '''Set label id.'''
         self.labelId = lId
-        
-        if self.labelId == self.selectAllId:
-            self.selectAllLabel.set_markup(
-                "<span foreground='%s' size='%s' underline='single'>%s</span>" % (self.selectColor, LABEL_FONT_SIZE, "全选"))
-            self.unselectAllLabel.set_markup(
-                "<span foreground='%s' size='%s'>%s</span>" % (self.normalColor, LABEL_FONT_SIZE, "全不选"))
-        else:
-            self.selectAllLabel.set_markup(
-                "<span foreground='%s' size='%s'>%s</span>" % (self.normalColor, LABEL_FONT_SIZE, "全选"))
-            self.unselectAllLabel.set_markup(
-                "<span foreground='%s' size='%s' underline='single'>%s</span>" % (self.selectColor, LABEL_FONT_SIZE, "全不选"))
         
     def getLabelId(self):
         '''Get label id.'''
@@ -151,7 +151,7 @@ class Topbar(object):
         
         if ignoreNum > 0:
             (ignoreLabel, ignoreEventBox) = setDefaultClickableDynamicLabel(
-                "不再提醒升级%s款" % (ignoreNum),
+                __("No Notify UpdatePage") % (ignoreNum),
                 "topbarButton",
                 )
             ignoreEventBox.connect("button-press-event", lambda w, e: self.showIgnorePageCallback())
@@ -163,7 +163,11 @@ class Topbar(object):
         if upgradeNum == 0:
             markup = ""
         else:
-            markup = ("<span size='%s'>有 </span>" % (LABEL_FONT_SIZE)) + ("<span foreground='%s' size='%s'>%s</span>" % (self.numColor, LABEL_FONT_SIZE, str(upgradeNum))) + ("<span size='%s'> 个更新包可以升级</span>" % (LABEL_FONT_SIZE))
+            markup = (__("Topbar UpdatePage") % (LABEL_FONT_SIZE, 
+                                                 appTheme.getDynamicColor("topbarNum").getColor(),
+                                                 LABEL_FONT_SIZE, 
+                                                 str(upgradeNum), 
+                                                 LABEL_FONT_SIZE))
         self.numLabel.set_markup(markup)
 
 #  LocalWords:  efe

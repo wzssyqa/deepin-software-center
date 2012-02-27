@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,16 +20,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from utils import *
 from draw import *
+from lang import __, getDefaultLanguage
+from utils import *
 import appView
-import gtk
 import glib
+import gtk
 import pango
-import pygtk
-import utils
 import time
-pygtk.require('2.0')
+import utils
 
 class SearchCompletion(object):
     '''Search completion.'''
@@ -140,7 +139,7 @@ class SearchCompletion(object):
         textColor = appTheme.getDynamicColor("completionText").getColor()
         keywordColor = appTheme.getDynamicColor("completionKeyword").getColor()
         self.listStore.append(
-            ["<span foreground='%s'>%s</span>" % (textColor, "全文搜索") + " <span foreground='%s'>%s</span>" % (keywordColor, content), content])
+            ["<span foreground='%s'>%s</span>" % (textColor, __("Global Search")) + " <span foreground='%s'>%s</span>" % (keywordColor, content), content])
             
         for candidate in candidates:
             self.listStore.append(candidate)
@@ -183,10 +182,12 @@ class SearchCompletion(object):
                 utils.treeViewScrollVertical(self.treeView, True)
             elif eventName == "Page_Down":
                 utils.treeViewScrollVertical(self.treeView, False)
+            elif eventName == "Escape":
+                self.hide()
             else:
                 self.entry.event(keyPressEvent)
             self.propagateLock = False
-        
+            
             return True
         else:
             return False

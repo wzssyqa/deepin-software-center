@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 #
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,50 +20,48 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from utils import *
-from theme import *
 from appItem import *
-from draw import *
 from constant import *
 from draw import *
+from draw import *
+from lang import __, getDefaultLanguage
 from math import pi
+from theme import *
+from utils import *
 import appView
+import base64
+import browser
+import copy
 import gtk
+import json
 import os
 import pango
-import pygtk
 import subprocess
 import threading as td
 import time
-import utils
-import urllib2
-import urllib
-import json
 import time
-import base64
-pygtk.require('2.0')
+import urllib
+import urllib2
+import utils
+import zipfile
+
+(ARIA2_MAJOR_VERSION, ARIA2_MINOR_VERSION, _) = utils.getAria2Version()
 
 class DetailView(object):
     '''Detail view.'''
 
     PADDING = 10
     EXTRA_PADDING_X = 20
-    SCREENSHOT_WIDTH = 240
-    SCREENSHOT_HEIGHT = 180
-    SCREENSHOT_PADDING = 20
     LANGUAGE_BOX_PADDING = 3
     DETAIL_PADDING_X = 10
-    COMMENT_PADDING_TOP = 20
-    COMMENT_PADDING_BOTTOM = 5
     ALIGN_X = 20
     ALIGN_Y = 10
     STAR_PADDING_X = 10
     INFO_PADDING_Y = 3
-    SEND_COMMENT_BOX_HEIGHT = 40
 
     def __init__(self, aptCache, pageId, appInfo, 
                  switchStatus, downloadQueue, actionQueue,
-                 exitCallback, noscreenshotList, updateMoreCommentCallback,
+                 exitCallback, 
                  messageCallback):
         '''Init for detail view.'''
         # Init.
@@ -71,13 +69,11 @@ class DetailView(object):
         self.pageId = pageId
         self.appInfo = appInfo
         pkg = appInfo.pkg
-        self.bigScreenshot = None
+        self.pkgName = utils.getPkgName(pkg)
         self.readMoreBox = gtk.HBox()
         self.readMoreAlign = None
-        self.commentNotifyAlign = None
-        self.lastCommentId = ""
-        self.updateMoreCommentCallback = updateMoreCommentCallback
         self.messageCallback = messageCallback
+        self.smallScreenshot = None
         
         self.box = gtk.VBox()
         self.eventbox = gtk.EventBox()
@@ -90,7 +86,10 @@ class DetailView(object):
         self.align.add(self.eventbox)
        
         self.scrolledWindow = gtk.ScrolledWindow()
-        self.scrolledWindow.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+        self.scrolledWindow.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+        self.scrolledWindow.connect(
+            "hierarchy-changed", 
+            lambda w, t: self.smallScreenshot.toggleBigScreenshot())
         drawVScrollbar(self.scrolledWindow)
         utils.addInScrolledWindow(self.scrolledWindow, self.align)
         
@@ -128,7 +127,7 @@ class DetailView(object):
             appNameAlign,
             "<b>%s</b>" % (pkgName),
             appTheme.getDynamicColor("detailName"),
-            LABEL_FONT_XXX_LARGE_SIZE,
+            LABEL_FONT_XX_LARGE_SIZE,
             )
         appName = appNameLabel.getLabel()
         
@@ -150,19 +149,14 @@ class DetailView(object):
         appMiddleBox.pack_start(appIntroAlign, False, False)
         
         # Add return button.
-        self.returnButton = utils.newButtonWithoutPadding()
-        self.returnButton.connect("button-release-event", lambda widget, event: exitCallback(pageId, utils.getPkgName(pkg)))
-        self.returnButton.connect("button-release-event", lambda widget, event: self.closeBigScreenshot(True))
-        drawButton(self.returnButton, "return", "cell", False, "返回", BUTTON_FONT_SIZE_MEDIUM, "bigButtonFont")
-        
-        buttonPaddingTop = 20
+        buttonPaddingTop = 29
         buttonPaddingRight = 20
-        returnButtonAlign = gtk.Alignment()
-        returnButtonAlign.set(0.0, 0.0, 0.0, 0.0)
-        returnButtonAlign.add(self.returnButton)
-        returnButtonAlign.set_padding(buttonPaddingTop, 0, 0, buttonPaddingRight)
-        titleBox.pack_start(returnButtonAlign, False, False)
-
+        (self.returnButton, self.returnButtonAlign) = newActionButton("return", 0.0, 0.5, "detail")
+        self.returnButton.connect("button-release-event", lambda w, e: exitCallback(pageId, utils.getPkgName(pkg)))
+        self.returnButtonAlign.set(0.0, 0.0, 0.0, 0.0)
+        self.returnButtonAlign.set_padding(buttonPaddingTop, 0, 0, buttonPaddingRight)
+        titleBox.pack_start(self.returnButtonAlign, False, False)
+        
         # Add top information.
         self.appInfoItem = AppInfoItem(self.aptCache, appInfo, switchStatus, downloadQueue, actionQueue)
         
@@ -190,15 +184,122 @@ class DetailView(object):
         self.contentBox = gtk.VBox()
         self.bodyBox.pack_start(self.contentBox, False, False)
         
-        self.infoTab = self.createInfoTab(appInfo, pkg, noscreenshotList)
-        self.helpTab = self.createHelpTab(pkg)
+        self.infoTab = self.createInfoTab(appInfo, pkg)
+        
+        self.commentButtonFlag = False
+        
+        (self.commentErrorLabel, self.commentErrorBox) = setDefaultClickableDynamicLabel(
+            __("Comment load failed, please try again!"),
+            "link",
+            )
+        self.commentErrorAlign = gtk.Alignment()
+        self.commentErrorAlign.set(0.0, 0.0, 1.0, 1.0)
+        self.commentErrorAlign.set_padding(self.ALIGN_Y, self.ALIGN_Y, 0, 0)
+        self.commentErrorAlign.add(self.commentErrorBox)
+        self.commentErrorBox.connect("button-press-event", lambda w, e: self.refreshComment())
         
         self.contentBox.pack_start(self.infoTab)
+        
+        self.commentAreaAlign = gtk.Alignment()
+        self.commentAreaAlign.set(0.0, 0.0, 1.0, 1.0)
+        self.commentAreaAlign.set_padding(self.ALIGN_Y, 0, self.ALIGN_X, self.ALIGN_X)
+        self.contentBox.pack_start(self.commentAreaAlign)
+            
+        self.createCommentArea()
+        
         self.contentBox.show_all()
         
         self.scrolledWindow.show_all()
         
-    def createInfoTab(self, appInfo, pkg, noscreenshotList):
+    def checkCommentArea(self):
+        '''Check comment area, create it if it not exist.'''
+        if self.commentArea == None:
+            self.createCommentArea()    
+        
+    def createCommentArea(self):
+        '''Create comment area.'''
+        self.commentArea = None
+        utils.containerRemoveAll(self.commentAreaAlign)
+        
+        try:
+            commentView = browser.Browser("%s/softcenter/v1/comment?n=%s&hl=%s" % (
+                    SERVER_ADDRESS, 
+                    self.pkgName, 
+                    getDefaultLanguage()))
+            self.commentArea = commentView
+            self.commentArea.connect("console-message", lambda view, message, line, sourceId: self.handleConsoleMessage(message))
+            self.commentArea.connect("load-finished", lambda view, frame: self.scrollCommentAreaToTop())
+            self.commentArea.connect("load-error", lambda v, f, u, e: self.handleLoadError())
+            
+            # Set small width to avoid comment area can't shrink window when main window shrink.
+            self.commentArea.set_size_request(DEFAULT_WINDOW_WIDTH / 2, -1) 
+            
+            # Set default font size.
+            # settings = self.commentArea.get_settings()
+            # settings.set_property("default-font-size", 12)
+            
+            self.commentAreaAlign.add(self.commentArea)
+        except Exception, e:
+            # Display error button if got exception when create browser.
+            print e
+            self.handleLoadError()
+        
+    def refreshComment(self):
+        '''Refresh comment.'''
+        if self.commentErrorAlign.get_parent() != None:
+            self.contentBox.remove(self.commentErrorAlign)
+            
+        self.checkCommentArea()
+        if self.commentArea:
+            self.commentArea.reload_bypass_cache()
+            
+        self.contentBox.show_all()
+        
+    def handleLoadError(self):
+        '''Handle load error signal.'''
+        if self.commentErrorAlign.get_parent() != None:
+            self.contentBox.remove(self.commentErrorAlign)
+            
+        self.contentBox.pack_start(self.commentErrorAlign)
+        
+        self.contentBox.show_all()
+        
+        self.commentAreaAlign.hide_all()
+        
+    def handleConsoleMessage(self, message):
+        '''Handle console message.'''
+        if message == "button":
+            self.commentButtonFlag = True
+        else:
+            commands = message.split(",", 1)
+            if len(commands) == 2 and commands[0] == "open":
+                sendCommand("xdg-open " + commands[1])
+        
+    def scrollCommentAreaToTop(self):
+        '''Scroll comment area to top.'''
+        self.checkCommentArea()
+        
+        if self.commentButtonFlag and self.commentArea:
+            # Update Y coordinate.
+            vadj = self.scrolledWindow.get_vadjustment()
+            (_, offsetY) = self.commentArea.translate_coordinates(self.scrolledWindow, 0, 0)
+            currentY = vadj.get_value()
+            vadj.set_value(currentY + offsetY)
+        
+            # Update height.
+            self.commentArea.set_size_request(DEFAULT_WINDOW_WIDTH / 2, self.getCommentAreaHeight())
+            
+            # Update flag.
+            self.commentButtonFlag = False
+            
+    def getCommentAreaHeight(self):
+        '''Get comment area height.'''
+        self.commentArea.execute_script('oldtitle=document.title;document.title=document.body.offsetHeight;')
+        height = self.commentArea.get_main_frame().get_title()
+        self.commentArea.execute_script('document.title=oldtitle;')
+        return int(height) + 50
+        
+    def createInfoTab(self, appInfo, pkg):
         '''Select information tab.'''
         pkgName = utils.getPkgName(pkg)
         
@@ -217,17 +318,61 @@ class DetailView(object):
         infoBox.pack_start(detailBox)
         
         # Add summary.
+        summaryBox = gtk.HBox()
+        detailBox.pack_start(summaryBox, False, False)
+        
         summaryAlignRight = 30
         summaryAlignTop = 10
         summaryDLabel = DynamicSimpleLabel(
             detailBox,
-            "<b>详细介绍</b>",
+            "<b>%s</b>" % (__("Long Description")),
             appTheme.getDynamicColor("detailTitle"),
             LABEL_FONT_LARGE_SIZE,
             )
         summaryLabel = summaryDLabel.getLabel()
         summaryLabel.set_alignment(0.0, 0.5)
-        detailBox.pack_start(summaryLabel)
+        summaryBox.pack_start(summaryLabel, False, False)
+        
+        vLinePaddingX = 10
+        homepage = utils.getPkgHomepage(pkg)
+        if homepage != "":
+            homepageAlignY = 20
+            (homepageLabel, homepageEventBox) = setDefaultClickableDynamicLabel(
+                __("Homepage"),
+                "link",
+                )
+            homepageLabel.set_alignment(0.0, 0.0)
+            homepageEventBox.connect("button-press-event", lambda w, e: utils.sendCommand("xdg-open %s" % (homepage)))
+            vLineLeft = gtk.image_new_from_pixbuf(appTheme.getDynamicPixbuf("detail/vLine.png").getPixbuf())
+            summaryBox.pack_start(vLineLeft, False, False, vLinePaddingX)
+            summaryBox.pack_start(homepageEventBox, False, False)
+            vLineRight = gtk.image_new_from_pixbuf(appTheme.getDynamicPixbuf("detail/vLine.png").getPixbuf())
+            summaryBox.pack_start(vLineRight, False, False, vLinePaddingX)
+            
+            # Show home page when hover link.
+            utils.setHelpTooltip(homepageEventBox, homepage)
+            
+        # Add help translation.
+        lang = getDefaultLanguage()
+        if lang == "zh_CN":
+            translationAlignY = 20
+            (translationLabel, translationEventBox) = setDefaultClickableDynamicLabel(
+                __("Translate description"),
+                "link"
+                )
+            translationLabel.set_alignment(0.0, 0.0)
+            translationEventBox.connect(
+                "button-press-event", 
+                lambda w, e: utils.sendCommand("xdg-open http://pootle.linuxdeepin.com/zh_CN/ddtp-done/%s.po/translate/" % (pkgName)))
+            if homepage == "":
+                vLineLeft = gtk.image_new_from_pixbuf(appTheme.getDynamicPixbuf("detail/vLine.png").getPixbuf())
+                summaryBox.pack_start(vLineLeft, False, False, vLinePaddingX)
+            summaryBox.pack_start(translationEventBox, False, False)
+            vLineRight = gtk.image_new_from_pixbuf(appTheme.getDynamicPixbuf("detail/vLine.png").getPixbuf())
+            summaryBox.pack_start(vLineRight, False, False, vLinePaddingX)
+            
+            # Show translation  when hover link.
+            utils.setHelpTooltip(translationEventBox, "http://pootle.linuxdeepin.com/zh_CN/ddtp-done/%s.po/translate/" % (pkgName))
         
         summaryAlign = gtk.Alignment()
         summaryView = createContentView(summaryAlign, utils.getPkgLongDesc(pkg), False)
@@ -236,314 +381,49 @@ class DetailView(object):
         summaryAlign.add(summaryView)
         detailBox.pack_start(summaryAlign)
         
-        homepage = utils.getPkgHomepage(pkg)
-        if homepage != "":
-            homepageAlignY = 20
-            (homepageLabel, homepageEventBox) = setDefaultClickableDynamicLabel(
-                "访问首页",
-                "link",
-                )
-            homepageLabel.set_alignment(0.0, 0.5)
-            homepageEventBox.connect("button-press-event", lambda w, e: utils.runCommand("xdg-open %s" % (homepage)))
-            detailBox.pack_start(homepageEventBox, False, False)
-            
-            # Show home page when hover link.
-            utils.setHelpTooltip(homepageEventBox, homepage)
-            
-        # Add help translation.
-        lang = utils.getDefaultLanguage()
-        if lang == "zh_CN":
-            translationAlignY = 20
-            (translationLabel, translationEventBox) = setDefaultClickableDynamicLabel(
-                "协助翻译",
-                "link"
-                )
-            translationLabel.set_alignment(0.0, 0.5)
-            translationEventBox.connect(
-                "button-press-event", 
-                lambda w, e: utils.runCommand("xdg-open http://pootle.linuxdeepin.com/zh_CN/ddtp-done/%s.po/translate/" % (pkgName)))
-            detailBox.pack_start(translationEventBox, False, False)
-            
-            # Show translation  when hover link.
-            utils.setHelpTooltip(translationEventBox, "协助翻译")
-        
         # Add screenshot.
-        screenshotBox = gtk.VBox()
+        self.screenshotBox = gtk.VBox()
         
         screenshotDLabel = DynamicSimpleLabel(
-            screenshotBox,
-            "<b>软件截图</b>",
+            self.screenshotBox,
+            "<b>%s</b>" % (__("Screenshot")),
             appTheme.getDynamicColor("detailTitle"),
             LABEL_FONT_LARGE_SIZE,
             )
         screenshotLabel = screenshotDLabel.getLabel()
+        screenshotAlign = gtk.Alignment()
+        screenshotAlign.set(0.0, 0.5, 0.0, 0.0)
+        # screenshotAlign.set_padding(0, 0, 11, 0)
+        screenshotAlign.set_padding(0, 0, 0, 0)
+        screenshotAlign.add(screenshotLabel)
+        self.screenshotBox.pack_start(screenshotAlign, False, False)
         
-        screenshotLabel.set_alignment(0.0, 0.5)
-        screenshotBox.pack_start(screenshotLabel, False, False)
+        self.smallScreenshot = SmallScreenshot(pkgName, self.scrolledWindow, self.messageCallback, self.refreshScreenshot)
+        # self.screenshotBox.pack_start(self.smallScreenshot.box, False, False, 8)
+        self.screenshotBox.pack_start(self.smallScreenshot.box, False, False, 13)
+        self.smallScreenshot.start()
         
-        self.imageBox = gtk.EventBox()
-        self.imageBox.set_size_request(self.SCREENSHOT_WIDTH, self.SCREENSHOT_HEIGHT)
-        self.imageBox.connect("expose-event", lambda w, e: drawBackground(w, e, appTheme.getDynamicColor("background")))
-        screenshotBox.pack_start(self.imageBox, False, False)
-        
-        self.screenshotImage = gtk.Image()
-        self.imageBox.add(self.screenshotImage)
-        self.imageBox.connect("button-press-event", lambda w, e: self.showBigScreenshot(w, pkgName, noscreenshotList))
+        infoBox.pack_start(self.screenshotBox, False, False)
+            
+        # Make sure download thread stop when detail view destroy.
+        self.returnButton.connect(
+            "button-release-event", 
+            lambda widget, event: self.smallScreenshot.stop())
+        self.returnButton.connect(
+            "button-release-event", 
+            lambda widget, event: self.smallScreenshot.closeBigScreenshotWindow())
+        self.returnButton.connect("destroy", lambda widget: self.smallScreenshot.stop())
 
-        infoBox.pack_start(screenshotBox, False, False, self.DETAIL_PADDING_X)
-        
-        # Fetch screenshot.
-        screenshotPath = SCREENSHOT_DOWNLOAD_DIR + pkgName
-        screenshotWidth = self.SCREENSHOT_WIDTH - self.SCREENSHOT_PADDING
-        screenshotHeight = self.SCREENSHOT_HEIGHT - self.SCREENSHOT_PADDING
-        # Set screenshot image if has in cache.
-        if os.path.exists (screenshotPath):
-            self.screenshotImage.set_from_pixbuf(
-                gtk.gdk.pixbuf_new_from_file_at_size(screenshotPath, screenshotWidth, screenshotHeight))
-            utils.setCustomizeClickableCursor(
-                self.imageBox, 
-                self.screenshotImage, 
-                appTheme.getDynamicPixbuf("screenshot/zoom_in.png"))
-            utils.setHelpTooltip(self.imageBox, "点击放大")
-        # Otherwise just fetch screenshot when not in black list.
-        elif not pkgName in noscreenshotList:
-            # Init fetch thread.
-            fetchScreenshot = FetchScreenshot(
-                appInfo, noscreenshotList,
-                self.imageBox, self.screenshotImage, 
-                screenshotWidth, screenshotHeight)
-            
-            # Start fetch thread.
-            fetchScreenshot.start()
-            
-            # Make sure download thread stop when detail view destroy.
-            self.returnButton.connect("button-release-event", lambda widget, event: fetchScreenshot.stop())
-            self.returnButton.connect("destroy", lambda widget: fetchScreenshot.stop())
-        else:
-            print "No screenshot for %s, don't need fetch." % (pkgName)
-            
-            # Set upload image.
-            self.screenshotImage.set_from_pixbuf(gtk.gdk.pixbuf_new_from_file("../theme/default/image/screenshot/upload.png"))        
-
-        # Add comment label.
-        self.initCommentArea(detailBox)
-        
         return align
     
-    # Replace function for `initCommentArea` to toggle comment features.
-    def initCommentArea_(self, detailBox):
-        paddingY = 10
-        commentAreaLabel = gtk.Label()
-        commentAreaLabel.set_markup(
-            "<span foreground='#1A3E88' size='%s'>%s</span>"
-            % (LABEL_FONT_MEDIUM_SIZE, "正在进行社区整合调试,我们将在下一个版本开放评论功能。:)"))
-        commentAreaAlign = gtk.Alignment()
-        commentAreaAlign.set(0.5, 0.5, 0.0, 0.0)
-        commentAreaAlign.set_padding(paddingY, paddingY, 0, 0)
-        commentAreaAlign.add(commentAreaLabel)
-        detailBox.pack_start(commentAreaAlign)
-        
-    def initCommentArea(self, detailBox):
-        '''Init comment area.'''
-        self.commentAreaBox = gtk.VBox()
-        detailBox.pack_start(self.commentAreaBox)
+    def refreshScreenshot(self):
+        '''Refresh screenshot.'''
+        if self.smallScreenshot != None:
+            self.screenshotBox.remove(self.smallScreenshot.box)
             
-        self.commentListBox = gtk.VBox()
-        
-        # Add wait box.
-        commentWaitBox = gtk.HBox()
-        commentWaitAlign = gtk.Alignment()
-        commentWaitAlign.set(0.5, 0.5, 0.0, 0.0)
-        commentWaitAlign.add(commentWaitBox)
-        self.commentAreaBox.pack_start(commentWaitAlign)
-        
-        commentWaitAnimation = DynamicImage(
-            commentWaitBox,
-            appTheme.getDynamicPixbufAnimation("wait.gif"),
-            ).image
-        commentWaitAlign = gtk.Alignment()
-        commentWaitAlign.set(0.5, 0.5, 0.0, 0.0)
-        commentWaitAlign.add(commentWaitAnimation)
-        commentWaitBox.pack_start(commentWaitAlign, False, False)
-        
-        commentWaitLabel = gtk.Label()
-        commentWaitLabel.set_markup("<span foreground='#1A3E88' size='%s'><b>读取用户评论...</b></span>"
-                                    % (LABEL_FONT_LARGE_SIZE))
-        commentWaitBox.pack_start(commentWaitLabel, False, False)
-    
-    def showBigScreenshot(self, imageWidget, pkgName, noscreenshotList):
-        '''Show big screenshot.'''
-        if not pkgName in noscreenshotList:
-            screenshotPixbuf = self.screenshotImage.get_pixbuf()
-            if screenshotPixbuf != None:
-                if self.bigScreenshot == None:
-                     screenshotPath = SCREENSHOT_DOWNLOAD_DIR + pkgName
-                     self.bigScreenshot = BigScreenshot(self.scrolledWindow, screenshotPath, self.closeBigScreenshot)
-        else:
-            print "*** Help us upload screenshot!"
-                 
-    def closeBigScreenshot(self, destroy=False):
-        '''Close big screenshot.'''
-        if destroy and self.bigScreenshot != None:
-            self.bigScreenshot.window.destroy()
-        self.bigScreenshot = None
-    
-    def adjustTranslatePaned(self, widget):
-        '''Adjust translate paned.'''
-        self.translatePaned.set_position(widget.allocation.width / 2)
-        
-    def adjustTargetShortView(self):
-        '''Adjust target short view.'''
-        height = self.sourceShortView.allocation.height
-        self.targetShortView.set_size_request(-1, height)
-        
-    def createHelpTab(self, pkg):
-        '''Select help tab.'''
-        helpBox = gtk.VBox()
-        
-        align = gtk.Alignment()
-        align.set(0.0, 0.0, 1.0, 1.0)
-        align.set_padding(0, 0, self.ALIGN_X, self.ALIGN_X)
-        align.add(helpBox)
-        
-        self.translatePaned = gtk.HPaned()
-        helpBox.connect("size-allocate", lambda w, e: self.adjustTranslatePaned(w))
-        helpBox.pack_start(self.translatePaned)
-        
-        helpAlignX = 20
-
-        sourceBox = gtk.VBox()
-        sourceAlign = gtk.Alignment()
-        sourceAlign.set(0.0, 0.0, 1.0, 1.0)
-        sourceAlign.set_padding(0, 0, 0, helpAlignX)
-        sourceAlign.add(sourceBox)
-        self.translatePaned.pack1(sourceAlign)
-        
-        sourceLanguageBox = gtk.HBox()
-        sourceBox.pack_start(sourceLanguageBox, False, False)
-        
-        sourceLabel = gtk.Label()
-        sourceLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, "原文"))
-        sourceLanguageBox.pack_start(sourceLabel, False, False, self.LANGUAGE_BOX_PADDING)
-        
-        sourceComboBox = gtk.combo_box_new_text()
-        sourceLanguageBox.pack_start(sourceComboBox, True, True, self.LANGUAGE_BOX_PADDING)
-        sourceIndex = 0
-        for (index, sourceLanguage) in enumerate(LANGUAGE):
-            if sourceLanguage == SOURCE_LANGUAGE:
-                sourceIndex = index
-            sourceComboBox.append_text(sourceLanguage)
-        sourceComboBox.set_active(sourceIndex)
-        
-        sourceShortFrame = gtk.Frame("简介")
-        self.sourceShortView = createContentView(sourceShortFrame, utils.getPkgShortDesc(pkg), False)
-        sourceShortFrame.add(self.sourceShortView)
-        sourceBox.pack_start(sourceShortFrame, False, False)
-        
-        sourceBox.pack_start(gtk.VSeparator(), False, False)
-        
-        sourceLongFrame = gtk.Frame("详细介绍")
-        sourceLongView = createContentView(sourceLongFrame, utils.getPkgLongDesc(pkg), False)
-        sourceLongFrame.add(sourceLongView)
-        sourceBox.pack_start(sourceLongFrame)
-
-        targetBox = gtk.VBox()
-        targetAlign = gtk.Alignment()
-        targetAlign.set(1.0, 0.0, 1.0, 1.0)
-        targetAlign.set_padding(0, 0, helpAlignX, 0)
-        targetAlign.add(targetBox)
-        self.translatePaned.pack2(targetAlign)
-        
-        targetLanguageBox = gtk.HBox()
-        targetBox.pack_start(targetLanguageBox, False, False)
-        
-        targetLabel = gtk.Label()
-        targetLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, "译文"))
-        targetLanguageBox.pack_start(targetLabel, False, False, self.LANGUAGE_BOX_PADDING)
-        
-        targetComboBox = gtk.combo_box_new_text()
-        targetLanguageBox.pack_start(targetComboBox, True, True, self.LANGUAGE_BOX_PADDING)
-        targetIndex = 0
-        for (index, targetLanguage) in enumerate(LANGUAGE):
-            if targetLanguage == TARGET_LANGUAGE:
-                targetIndex = index
-            targetComboBox.append_text(targetLanguage)
-        targetComboBox.set_active(targetIndex)
-            
-        targetShortFrame = gtk.Frame("简介")
-        self.targetShortView = createContentView(targetShortFrame, "", True)
-        self.sourceShortView.connect("size-allocate", lambda w, e: self.adjustTargetShortView())
-        targetShortFrame.add(self.targetShortView)
-        targetBox.pack_start(targetShortFrame, False, False)
-        
-        targetBox.pack_start(gtk.VSeparator(), False, False)
-        
-        targetLongFrame = gtk.Frame("详细介绍")
-        targetLongView = createContentView(targetLongFrame, "", True)
-        targetLongFrame.add(targetLongView)
-        targetBox.pack_start(targetLongFrame)
-        
-        statusBox = gtk.HBox()
-        helpBox.pack_start(statusBox, False, False)
-        
-        statusLabel = gtk.Label()
-        statusLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, "目前文档尚未翻译完成, 感谢您帮助我们!"))
-        statusLabel.set_alignment(0.0, 0.5)
-        statusBox.pack_start(statusLabel)
-        
-        translateCommitButton = gtk.Button("提交翻译")
-        statusBox.pack_start(translateCommitButton, False, False)
-        
-        return align
-        
-    def createComment(self, (commentName, commentIcon, commentDate, commentContent)):
-        '''Create comment.'''
-        align = 5
-        padding = 10
-        
-        commentBox = gtk.VBox()
-        commentAlign = gtk.Alignment()
-        commentAlign.set(0.0, 0.5, 1.0, 1.0)
-        commentAlign.set_padding(padding, padding, 0, 0)
-        commentAlign.add(commentBox)
-        
-        box = gtk.HBox()    
-        commentBox.pack_start(box, False, False)
-        
-        icon = gtk.image_new_from_file(commentIcon)
-        iconAlign = gtk.Alignment()
-        iconAlign.set(0.5, 0.5, 0.0, 0.0)
-        iconAlign.set_padding(align, align, align, align)
-        iconAlign.add(icon)
-        box.pack_start(iconAlign, False, False)
-        
-        rightBox = gtk.VBox()
-        box.pack_start(rightBox)
-        
-        infoBox = gtk.HBox()
-        rightBox.pack_start(infoBox, False, False)
-        
-        nameLabel = gtk.Label()
-        nameLabel.set_markup("<span foreground='#1A3E88' size='%s'>%s</span>" % (LABEL_FONT_SIZE, commentName))
-        infoBox.pack_start(nameLabel, False, False)
-        
-        dataLabel = gtk.Label()
-        dataLabel.set_markup("<span foreground='#333333' size='%s'>%s</span>" % (LABEL_FONT_SIZE, commentDate))
-        dataLabel.set_alignment(1.0, 0.5)
-        infoBox.pack_start(dataLabel)
-        
-        textView = gtk.TextView()
-        textView.set_editable(False)
-        textView.set_wrap_mode(gtk.WRAP_WORD)
-        textBuffer = textView.get_buffer()
-        textBuffer.set_text(commentContent)
-        rightBox.pack_start(textView)
-        
-        line = gtk.Image()
-        drawLine(line, appTheme.getDynamicColor("commentFrame"), 1, False, LINE_BOTTOM)
-        commentBox.pack_start(line)
-            
-        return commentAlign
+        self.smallScreenshot = SmallScreenshot(self.pkgName, self.scrolledWindow, self.messageCallback, self.refreshScreenshot)
+        self.screenshotBox.pack_start(self.smallScreenshot.box, False, False)
+        self.smallScreenshot.start()
     
     def updateDownloadingStatus(self, pkgName, progress, feedback):
         '''Update downloading status.'''
@@ -578,334 +458,6 @@ class DetailView(object):
         else:
             self.switchToStatus(pkgName, APP_STATE_INSTALLED)
             
-    def updateInfo(self, voteJson):
-        '''Update detail information.'''
-        # Get info.
-        pkgName = utils.getPkgName(self.appInfo.pkg)
-        softInfo = voteJson[pkgName]
-        commentList = voteJson["comment_list"]
-        
-        starLevel = softInfo["mark"]
-        voteNum = softInfo["vote_nums"]
-        commentNum = softInfo["comment_nums"]
-        
-        # Update mark and vote number.
-        appStar = createStarBox(starLevel, 24)
-        appStarAlign = gtk.Alignment()
-        appStarAlign.set(0.0, 0.5, 0.0, 0.0)
-        appStarAlign.add(appStar)
-        self.appNameBox.pack_start(appStarAlign, False, False, self.STAR_PADDING_X)
-        
-        if voteNum > 0:
-            appVoteAlign = gtk.Alignment()
-            appVoteNumLabel = DynamicSimpleLabel(
-                appVoteAlign,
-                "(%s 人参与了评分)" % (voteNum),
-                appTheme.getDynamicColor("detailInfo"),
-                LABEL_FONT_SIZE,
-                )
-            appVoteNum = appVoteNumLabel.getLabel()
-            appVoteAlign.set(0.0, 1.0, 0.0, 0.0)
-            appVoteAlign.add(appVoteNum)
-            self.appNameBox.pack_start(appVoteAlign, False, False)
-        
-        # Update comment list.
-        utils.containerRemoveAll(self.commentAreaBox)
-        
-        commentTitleBox = gtk.HBox()
-        self.commentAreaBox.pack_start(commentTitleBox)
-        
-        commentLabelAlign = gtk.Alignment()
-        commentDLabel = DynamicSimpleLabel(
-            commentLabelAlign,
-            "<b>用户评论</b>",
-            appTheme.getDynamicColor("detailTitle"),
-            LABEL_FONT_LARGE_SIZE,
-            )
-        commentLabel = commentDLabel.getLabel()
-        
-        commentLabelAlign.set(0.0, 1.0, 0.0, 0.0)
-        commentLabelAlign.set_padding(self.COMMENT_PADDING_TOP, self.COMMENT_PADDING_BOTTOM, 0, 0)
-        commentLabelAlign.add(commentLabel)
-        commentTitleBox.pack_start(commentLabelAlign, False, False)
-        
-        # Temp send comment entry.
-        commentViewHeight = 60
-        self.commentView = gtk.TextView()
-        self.commentView.set_size_request(-1, commentViewHeight)
-        commentViewFrame = gtk.Frame()
-        commentViewFrame.add(self.commentView)
-        self.commentAreaBox.pack_start(commentViewFrame)
-        
-        self.sendCommentBox = gtk.HBox()
-        self.sendCommentBox.set_size_request(-1, self.SEND_COMMENT_BOX_HEIGHT)
-        self.commentAreaBox.pack_start(self.sendCommentBox)
-        
-        self.switchCommentInit()
-        
-        if commentNum > 0:
-            commentNumLabelAlign = gtk.Alignment()
-            commentNumDLabel = DynamicSimpleLabel(
-                commentNumLabelAlign,
-                "%s 人参与了讨论" % commentNum,
-                appTheme.getDynamicColor("detailInfo"),
-                LABEL_FONT_SIZE,
-                )
-            self.commentNumLabel = commentNumDLabel.getLabel()
-            commentNumLabelAlign.set(1.0, 1.0, 0.0, 0.0)
-            commentNumLabelAlign.set_padding(self.COMMENT_PADDING_TOP, self.COMMENT_PADDING_BOTTOM, 0, 0)
-            commentNumLabelAlign.add(self.commentNumLabel)
-            commentTitleBox.pack_start(commentNumLabelAlign)
-            
-        line = gtk.Image()
-        drawLine(line, appTheme.getDynamicColor("commentFrame"), 1, False, LINE_BOTTOM)
-        self.commentAreaBox.pack_start(line)
-            
-        if len(commentList) == 0:
-            notifyPaddingY = 20
-            commentNotifyLabel = gtk.Label()
-            commentNotifyLabel.set_markup(
-                "<span foreground='#1A3E88' size='%s'><b>还不快抢沙发?</b></span>" % (LABEL_FONT_XX_LARGE_SIZE))
-            self.commentNotifyAlign = gtk.Alignment()
-            self.commentNotifyAlign.set(0.5, 0.5, 0.0, 0.0)
-            self.commentNotifyAlign.set_padding(notifyPaddingY, notifyPaddingY, 0, 0)
-            self.commentNotifyAlign.add(commentNotifyLabel)
-            self.commentAreaBox.pack_start(self.commentNotifyAlign)
-        else:
-            # Add comment list.
-            self.commentAreaBox.pack_start(self.commentListBox)
-            self.addCommentList(commentList, commentNum, True)
-        
-        self.scrolledWindow.show_all()
-        
-    def addCommentList(self, commentList, commentNum, firstTime=False):
-        '''Add comment list.'''
-        # Add comment list.
-        for comment in commentList:
-            commentName = comment["cuid"]
-            commentIcon = "../theme/default/image/comment/me.png"
-            commentDate = comment["ctime"]
-            commentContent = comment["content"]
-            
-            commentBox = self.createComment((commentName, commentIcon, commentDate, commentContent))
-            self.commentListBox.pack_start(commentBox, False, False)
-            
-        self.lastCommentId = commentList.pop()["cid"]
-        
-        # Add read more button.
-        if self.readMoreBox != None and self.readMoreBox.get_parent() != None:
-            utils.containerRemoveAll(self.readMoreBox)
-            self.commentAreaBox.remove(self.readMoreBox)
-        
-        if (firstTime and commentNum > 20) or commentNum >= 20:
-            (readMoreButton, self.readMoreAlign) = newActionButton(
-                "update_selected", 1.0, 0.5, 
-                "cell", True, "查看更多的评论", BUTTON_FONT_SIZE_MEDIUM, "bigButtonFont",
-                20
-                )
-            self.readMoreBox.pack_start(self.readMoreAlign)
-            self.commentAreaBox.pack_start(self.readMoreBox, False, False)
-            readMoreButton.connect("button-press-event", lambda w, e: self.fetchMoreComment())
-            
-    def sendComment(self):
-        '''Send comment.'''
-        # Get comment.
-        commentBuffer = self.commentView.get_buffer()
-        (startIter, endIter) = (commentBuffer.get_start_iter(), commentBuffer.get_end_iter())
-        commentInput = commentBuffer.get_text(startIter, endIter)
-        
-        if len(commentInput.strip()) > 0:        
-            comment = base64.b64encode(commentInput)
-            commentBuffer.delete(startIter, endIter) # delete comment.
-            
-            # Get package name.
-            pkgName = utils.getPkgName(self.appInfo.pkg)
-            
-            # Get user name.
-            userName = base64.b64encode("深度Linuxer %s" % (time.ctime()))
-            
-            # Switch to comment send status.
-            self.switchCommentSend()
-            
-            # Start send comment thread.
-            sendCommentThread = SendComment(pkgName, userName, comment, 
-                                            self.sendCommentSuccess, self.sendCommentFailed)    
-            sendCommentThread.start()
-        else:
-            print "Don't allowed send blank comment."
-            
-    def switchCommentInit(self):
-        '''Switch to comment init status.'''
-        # Clean send comment box first.
-        utils.containerRemoveAll(self.sendCommentBox)            
-
-        # Show send comment button.
-        (sendCommentButton, sendCommentAlign) = newActionButton(
-            "update_selected", 1.0, 0.5, 
-            "cell", True, "发表评论", BUTTON_FONT_SIZE_MEDIUM, "bigButtonFont",
-            5
-            )
-        sendCommentButton.connect("button-press-event", lambda w, e: self.sendComment())
-        self.sendCommentBox.pack_start(sendCommentAlign)
-        
-        self.sendCommentBox.show_all()
-            
-    def switchCommentSend(self):
-        '''Switch to comment send status.'''
-        # Clean send comment box first.
-        utils.containerRemoveAll(self.sendCommentBox)            
-        
-        # Show waiting.
-        sendCommentWaitBox = gtk.VBox()
-        sendCommentWaitAlign = gtk.Alignment()
-        sendCommentWaitAlign.set(1.0, 0.5, 0.0, 0.0)
-        sendCommentWaitAlign.add(sendCommentWaitBox)
-        self.sendCommentBox.pack_start(sendCommentWaitAlign)
-        
-        sendCommentWaitAnimation = DynamicImage(
-            sendCommentWaitAlign,
-            appTheme.getDynamicPixbufAnimation("wait.gif"),
-            ).image
-        sendCommentWaitBox.pack_start(sendCommentWaitAnimation, True, True)
-        
-        # Show waiting label.
-        sendCommentLabel = gtk.Label()
-        sendCommentLabel.set_markup("<span foreground='#1a3e88' size='%s'>发表评论...</span>" % (LABEL_FONT_LARGE_SIZE))
-        self.sendCommentBox.pack_start(sendCommentLabel, False, False)
-        
-        self.sendCommentBox.show_all()
-            
-    @postGUI
-    def sendCommentSuccess(self, pkgName, comment, userName):
-        '''Send comment success.'''
-        # Switch to comment init status.
-        self.switchCommentInit()
-        
-        # Notify user.
-        self.messageCallback("发表 %s 评论成功" % (pkgName))
-        
-        # Add comment in comment list.
-        commentIcon = "../theme/default/image/comment/me.png"
-        commentDate = utils.getCurrentTime()
-        commentName = "深度Linuxer %s" % (commentDate)
-        commentBox = self.createComment((
-                commentName, 
-                commentIcon, 
-                commentDate, 
-                base64.b64decode(comment)))
-        
-        # Remove notify widget if have it.
-        if self.commentNotifyAlign != None:
-            self.commentAreaBox.remove(self.commentNotifyAlign)
-            self.commentAreaBox.pack_start(self.commentListBox)
-        
-        # Connect widget.
-        self.commentListBox.pack_start(commentBox, False, False)
-        self.commentListBox.reorder_child(commentBox, 0)
-
-        self.commentAreaBox.show_all()
-        
-    @postGUI
-    def sendCommentFailed(self, pkgName):
-        '''Send comment failed.'''
-        # Switch to comment init status.
-        self.switchCommentInit()
-
-        # Notify user.
-        self.messageCallback("发表 %s 评论失败, 请检查您的网络链接" % (pkgName))
-        
-    def fetchMoreComment(self):
-        '''Fetch more comment.'''
-        # Start fetch more comment thread.
-        FetchCommentThread = FetchMoreComment(
-            self.pageId, 
-            utils.getPkgName(self.appInfo.pkg),
-            self.lastCommentId,
-            self.updateMoreCommentCallback)
-        FetchCommentThread.start()
-        
-        # Display waiting status.
-        utils.containerRemoveAll(self.readMoreBox)
-        fetchMoreAlign = gtk.Alignment()
-        fetchMoreAlign.set(1.0, 0.5, 0.0, 0.0)
-        self.readMoreBox.pack_start(fetchMoreAlign, True, True)
-        
-        fetchWaitAnimation = DynamicImage(
-            fetchMoreAlign,
-            appTheme.getDynamicPixbufAnimation("wait.gif"),
-            ).image
-        fetchMoreAlign.add(fetchWaitAnimation)
-        
-        fetchMoreLabel = gtk.Label()
-        fetchMoreLabel.set_markup("<span foreground='#1a3e88' size='%s'>读取更多评论...</span>" % (LABEL_FONT_LARGE_SIZE))
-        self.readMoreBox.pack_start(fetchMoreLabel, False, False)
-        
-        self.commentAreaBox.show_all()
-                
-    def updateMoreComment(self, voteJson):
-        '''Update more comment.'''
-        # Update more comment.
-        pkgName = utils.getPkgName(self.appInfo.pkg)
-        commentList = voteJson["comment_list"]
-        
-        if len(commentList) == 0 and self.readMoreBox != None:
-            self.commentAreaBox.remove(self.readMoreBox)
-        else:
-            # Add comment list.
-            self.addCommentList(commentList, len(commentList))
-            
-        self.scrolledWindow.show_all()
-        
-class SendComment(td.Thread):
-    '''Send comment.'''
-	
-    def __init__(self, pkgName, userName, comment, 
-                 successCallback, failedCallback):
-        '''Init for fetch detail.'''
-        td.Thread.__init__(self)
-        self.setDaemon(True) # make thread exit when main program exit 
-        self.pkgName = pkgName
-        self.userName = userName
-        self.comment = comment
-        self.successCallback = successCallback
-        self.failedCallback = failedCallback
-        
-    def run(self):
-        '''Run'''
-        try:
-            args = {'n':self.pkgName, 'c':self.comment, 'u':self.userName}
-            
-            connection = urllib2.urlopen(
-                ("%s/comment.php?" % (SERVER_ADDRESS)),
-                data=urllib.urlencode(args),
-                timeout=POST_TIMEOUT)
-            self.successCallback(self.pkgName, self.comment, self.userName)
-        except Exception, e:
-            self.failedCallback(self.pkgName)
-            
-class FetchMoreComment(td.Thread):
-    '''Fetch more comment.'''
-	
-    def __init__(self, pageId, pkgName, lastCommentId, updateMoreCommentCallback):
-        '''Init for fetch detail.'''
-        td.Thread.__init__(self)
-        self.setDaemon(True) # make thread exit when main program exit 
-        self.pageId  = pageId
-        self.pkgName = pkgName
-        self.lastCommentId = lastCommentId
-        self.updateMoreCommentCallback = updateMoreCommentCallback
-
-    def run(self):
-        '''Run'''
-        try:
-            connection = urllib2.urlopen(
-                "%s/getComment.php?n=%s&cid=%s" % (SERVER_ADDRESS, self.pkgName, self.lastCommentId), 
-                timeout=GET_TIMEOUT)
-            voteJson = json.loads(connection.read())        
-            self.updateMoreCommentCallback(self.pageId, self.pkgName, voteJson)
-        except Exception, e:
-            print "Fetch more comment data failed."
-        
 def createContentView(parent, content, editable=True):
     '''Create summary view.'''
     dTextView = DynamicTextView(
@@ -938,15 +490,26 @@ class AppInfoItem(DownloadItem):
         self.aptCache = aptCache
         self.itemFrame = gtk.VBox()
         self.itemBox = gtk.HBox()
-        itemEventBox = gtk.EventBox()
-        itemEventBox.set_visible_window(False)
-        itemEventBox.add(self.itemBox)
-        drawDetailItemBackground(itemEventBox)
-        itemAlign = gtk.Alignment()
-        itemAlign.set_padding(0, 0, self.ALIGN_X, self.ALIGN_X)
-        itemAlign.set(0.0, 0.5, 1.0, 1.0)
-        itemAlign.add(itemEventBox)
-        self.itemFrame.add(itemAlign)
+        self.itemPaddingY = 10
+        self.itemInfoBox = gtk.VBox()
+        self.itemInfoBox.pack_start(self.itemBox)
+        self.itemAlign = gtk.Alignment()
+        self.itemAlign.set(0.0, 0.5, 1.0, 1.0)
+        self.itemAlign.set_padding(self.itemPaddingY, self.itemPaddingY, 0, 0)
+        self.itemAlign.add(self.itemInfoBox)
+        self.itemTopLine = gtk.Image()
+        self.itemBottomLine = gtk.Image()
+        drawHLine(self.itemTopLine, appTheme.getDynamicColor("itemFrame"))
+        drawHLine(self.itemBottomLine, appTheme.getDynamicColor("itemFrame"))
+        self.itemActionBox = gtk.VBox()
+        self.itemActionBox.pack_start(self.itemTopLine)
+        self.itemActionBox.pack_start(self.itemAlign, True, True)
+        self.itemActionBox.pack_start(self.itemBottomLine)
+        self.itemActionAlign = gtk.Alignment()
+        self.itemActionAlign.set(0.0, 0.5, 1.0, 1.0)
+        self.itemActionAlign.set_padding(0, 0, self.ALIGN_X, self.ALIGN_X)
+        self.itemActionAlign.add(self.itemActionBox)
+        self.itemFrame.add(self.itemActionAlign)
         self.actionQueue = actionQueue
         
         # Widget that status will change.
@@ -957,8 +520,7 @@ class AppInfoItem(DownloadItem):
         self.uninstallingProgressbar = None
         self.uninstallingFeedbackLabel = None
         
-        pkg = appInfo.pkg
-        pkgName = utils.getPkgName(pkg)
+        self.pkgName = utils.getPkgName(appInfo.pkg)
         
         topLeftBox = gtk.HBox()
         self.itemBox.pack_start(topLeftBox, False, False)
@@ -970,7 +532,7 @@ class AppInfoItem(DownloadItem):
 
         # Add application version.
         self.appExtraBox = gtk.VBox()
-        topLeftBox.pack_start(self.appExtraBox, False, False, self.EXTRA_PADDING_X)
+        topLeftBox.pack_start(self.appExtraBox)
         
         # Init basic status.
         self.initBasicStatus()
@@ -978,6 +540,43 @@ class AppInfoItem(DownloadItem):
         # Init addition status.
         self.initAdditionStatus()
 
+        # Fetch vote info.
+        self.voteAlign = None
+        FetchVoteInfo(self.pkgName, self.updateVoteInfo).start()
+        
+    def updateVoteInfo(self, voteJson):
+        '''Update vote information.'''
+        if self.voteAlign:
+            self.itemInfoBox.remove(self.voteAlign)
+            
+        try:
+            votePaddingTop = 3
+            votePaddingBottom = 5
+            self.voteBox = gtk.HBox()
+            self.voteAlign = gtk.Alignment()
+            self.voteAlign.set_padding(votePaddingTop, votePaddingBottom, 0, 0)
+            self.voteAlign.add(self.voteBox)
+            self.itemInfoBox.pack_start(self.voteAlign)
+            self.itemInfoBox.reorder_child(self.voteAlign, 0)
+            (vote, voteNum) = voteJson[self.pkgName]
+            self.starView = StarView(float(vote), 20, False)
+            self.voteBox.pack_start(self.starView.eventbox, False, False)
+            
+            if (int(voteNum) > 0):
+                self.voteLabel = DynamicSimpleLabel(
+                    self.voteBox,
+                    (__("Vote num") % (voteNum)),
+                    appTheme.getDynamicColor("detailName"),
+                    LABEL_FONT_SIZE,
+                    ).getLabel()
+                self.voteLabel.set_alignment(0.0, 1.0)
+                self.voteBox.pack_start(self.voteLabel, False, False)
+            self.itemInfoBox.show_all()
+        except Exception, e:
+            print e
+            if self.voteAlign:
+                self.itemInfoBox.remove(self.voteAlign)
+        
     def initBasicStatus(self):
         '''Init basic status.'''
         pkg = self.appInfo.pkg
@@ -988,7 +587,7 @@ class AppInfoItem(DownloadItem):
         # Add application version.
         appVersionLabel = DynamicSimpleLabel(
             self.appExtraBox,
-            "版本: " + utils.getPkgVersion(pkg),
+            __("Version: ") + utils.getPkgVersion(pkg),
             appTheme.getDynamicColor("detailAction"),
             LABEL_FONT_MEDIUM_SIZE,
             )
@@ -1003,7 +602,7 @@ class AppInfoItem(DownloadItem):
             (_, rSize) = utils.getPkgDependSize(self.aptCache, pkg, ACTION_UNINSTALL)
             uninstallSizeLabel = DynamicSimpleLabel(
                 appSizeBox,
-                "卸载后释放%s空间" % (utils.formatFileSize(rSize)),
+                (__("Uninstall to release %s space") % (utils.formatFileSize(rSize))),
                 appTheme.getDynamicColor("detailAction"),
                 LABEL_FONT_MEDIUM_SIZE,
                 )
@@ -1015,15 +614,15 @@ class AppInfoItem(DownloadItem):
             useSizeLabel.set_alignment(0.0, 0.5)
             
             if self.appInfo.status == APP_STATE_UPGRADE:
-                actionLabel = "升级"
+                actionLabel = __("Action Update")
                 (downloadSize, useSize) = utils.getPkgDependSize(self.aptCache, pkg, ACTION_UPGRADE)
             else:
-                actionLabel = "安装"
+                actionLabel = __("Action Install")
                 (downloadSize, useSize) = utils.getPkgDependSize(self.aptCache, pkg, ACTION_INSTALL)
 
             updateSizeLabel = DynamicSimpleLabel(
                 appSizeBox,
-                "%s后占用 %s 空间 需要下载 %s" % (actionLabel, utils.formatFileSize(useSize), utils.formatFileSize(downloadSize)),
+                (__("Download to eat %s space") % (actionLabel, utils.formatFileSize(downloadSize))),
                 appTheme.getDynamicColor("detailAction"),
                 LABEL_FONT_MEDIUM_SIZE,
                 )
@@ -1061,17 +660,17 @@ class AppInfoItem(DownloadItem):
         if self.appInfo.status == APP_STATE_INSTALLED:
             appActionButton = utils.newButtonWithoutPadding()
             appActionButton.connect("button-release-event", lambda widget, event: self.switchToUninstalling())
-            drawButton(appActionButton, "uninstall", "cell", False, "卸载", BUTTON_FONT_SIZE_SMALL, "buttonFont")
+            drawButton(appActionButton, "uninstall", "cell", False, __("Action Uninstall"), BUTTON_FONT_SIZE_SMALL, "buttonFont")
         elif self.appInfo.status == APP_STATE_UPGRADE:
             appActionButton = utils.newButtonWithoutPadding()
             appActionButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
-            drawButton(appActionButton, "update", "cell", False, "升级", BUTTON_FONT_SIZE_SMALL, "buttonFont")
+            drawButton(appActionButton, "update", "cell", False, __("Action Update"), BUTTON_FONT_SIZE_SMALL, "buttonFont")
         else:
             appActionButton = utils.newButtonWithoutPadding()
             appActionButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
-            drawButton(appActionButton, "install", "cell", False, "安装", BUTTON_FONT_SIZE_SMALL, "buttonFont")
+            drawButton(appActionButton, "install", "cell", False, __("Action Install"), BUTTON_FONT_SIZE_SMALL, "buttonFont")
         appActionBox.pack_start(appActionButton, False, False)
-        self.appAdditionBox.pack_start(appActionBox, False, False, self.EXTRA_PADDING_X)
+        self.appAdditionBox.pack_start(appActionBox)
         
     def initInstallingStatus(self):
         '''Init installing status.'''
@@ -1114,7 +713,7 @@ class AppInfoItem(DownloadItem):
         if self.appInfo.status == APP_STATE_INSTALLING:
             if self.installingProgressbar != None and self.installingFeedbackLabel != None:
                 self.installingProgressbar.setProgress(progress)
-                self.installingFeedbackLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, "安装中"))
+                self.installingFeedbackLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, __("Action Installing")))
                 
                 self.itemFrame.show_all()
                 
@@ -1123,7 +722,7 @@ class AppInfoItem(DownloadItem):
         if self.appInfo.status == APP_STATE_UPGRADING:
             if self.upgradingProgressbar != None and self.upgradingFeedbackLabel != None:
                 self.upgradingProgressbar.setProgress(progress)
-                self.upgradingFeedbackLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, "升级中"))
+                self.upgradingFeedbackLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, __("Action Updating")))
                 
                 self.itemFrame.show_all()
                 
@@ -1132,257 +731,632 @@ class AppInfoItem(DownloadItem):
         if self.appInfo.status == APP_STATE_UNINSTALLING:
             if self.uninstallingProgressbar != None and self.uninstallingFeedbackLabel != None:
                 self.uninstallingProgressbar.setProgress(progress)
-                self.uninstallingFeedbackLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, "卸载中"))
+                self.uninstallingFeedbackLabel.set_markup("<span size='%s'>%s</span>" % (LABEL_FONT_SIZE, __("Action Uninstalling")))
                 
                 self.itemFrame.show_all()
-                
-class FetchScreenshot(td.Thread):
-    '''Fetch screenshot.'''
+
+class SmallScreenshot(td.Thread):
+    '''Small screenshot.'''
 	
-    def __init__(self, appInfo, noscreenshotList, imageBox, image, width, height):
-        '''Init for fetch screenshot.'''
+    SMALL_SCREENSHOT_ROW = 3
+    SMALL_SCREENSHOT_COLUMN = 3
+    SCREENSHOT_WIDTH = 280
+    SCREENSHOT_HEIGHT = 210
+    SMALL_SCREENSHOT_WIDTH = 88
+    SMALL_SCREENSHOT_HEIGHT = 60 
+    SMALL_SCREENSHOT_PADDING_X = 10
+    SMALL_SCREENSHOT_PADDING_Y = 10
+    SCREENSHOT_MAX_NUM = 9
+    
+    def __init__(self, pkgName, scrolledWindow, messageCallback, refreshScreenshotCallback):
+        '''Init small screenshot.'''
+        # Init.
         td.Thread.__init__(self)
         self.setDaemon(True) # make thread exit when main program exit 
         
-        self.appInfo = appInfo
-        self.imageBox = imageBox
-        self.image = image
+        self.scrolledWindow = scrolledWindow
+        self.messageCallback = messageCallback
+        self.refreshScreenshotCallback = refreshScreenshotCallback
+        self.images = []
+        self.imageIndex = 0
+        self.pkgName = pkgName
         self.proc = None
-        self.returnCode = DOWNLOAD_FAILED
-        self.width = width
-        self.height = height
-        self.noscreenshotList = noscreenshotList
-        self.killed = False
+        self.box = gtk.VBox()
+        self.topBox = gtk.HBox()
+        self.topBox.set_size_request(self.SCREENSHOT_WIDTH, self.SCREENSHOT_HEIGHT)
+        self.bottomBox = gtk.VBox()
+        self.bigScreenshotImage = None
+        self.bigScreenshot = None
+        self.autoSaveInterval = 10       # time to auto save progress, in seconds
+        
+        self.box.pack_start(self.topBox, False, False)
+        self.box.pack_start(self.bottomBox, False, False)
+        self.box.show_all()
+        
+    def toggleBigScreenshot(self):
+        '''Toggle big screenshot.'''
+        if self.bigScreenshot != None:
+            if self.bigScreenshot.window.get_visible():
+                self.bigScreenshot.hide()
+            else:
+                self.bigScreenshot.show()
+        
+    @postGUI
+    def initWaitStatus(self):
+        '''Init wait status.'''
+        # Clean top box.
+        utils.containerRemoveAll(self.topBox)
+        
+        # Init background.
+        background = gtk.EventBox()
+        background.set_visible_window(False)
+        self.topBox.add(background)
+        drawSmallScreenshotBackground(
+            background,
+            self.SCREENSHOT_WIDTH,
+            self.SCREENSHOT_HEIGHT,
+            appTheme.getDynamicPixbuf("screenshot/background_wait.png")
+            )
+        
+        # Add wait animation.
+        waitAnimation = DynamicImage(
+            background,
+            appTheme.getDynamicPixbufAnimation("wait.gif"),
+            ).image
+        background.add(waitAnimation)
+        
+        self.box.show_all()
+        
+    @postGUI
+    def initQueryErrorStatus(self):
+        '''Init network query status.'''
+        # Clean top box.
+        utils.containerRemoveAll(self.topBox)
+        
+        # Init background.
+        background = gtk.EventBox()
+        background.set_visible_window(False)
+        self.topBox.add(background)
+        drawSmallScreenshotBackground(
+            background,
+            self.SCREENSHOT_WIDTH,
+            self.SCREENSHOT_HEIGHT,
+            appTheme.getDynamicPixbuf("screenshot/background_failed.png")
+            )
+        background.connect("button-press-event", lambda w, e: self.refreshScreenshotCallback())
+        
+        utils.setHelpTooltip(background, __("Query fails, check your network and click refresh and try again."))
+        
+        self.box.show_all()
+        
+    @postGUI
+    def initDownloadErrorStatus(self):
+        '''Init network download status.'''
+        # Clean top box.
+        utils.containerRemoveAll(self.topBox)
+        
+        # Init background.
+        background = gtk.EventBox()
+        background.set_visible_window(False)
+        self.topBox.add(background)
+        drawSmallScreenshotBackground(
+            background,
+            self.SCREENSHOT_WIDTH,
+            self.SCREENSHOT_HEIGHT,
+            appTheme.getDynamicPixbuf("screenshot/background_failed.png")
+            )
+        background.connect("button-press-event", lambda w, e: self.refreshScreenshotCallback())
+        
+        utils.setHelpTooltip(background, __("Download fails, check your network and click refresh and try again."))
+        
+        self.box.show_all()
+        
+    @postGUI
+    def initNoneedStatus(self):
+        '''Init no need status.'''
+        # Clean top box.
+        utils.containerRemoveAll(self.topBox)
+        
+        # Init background.
+        background = gtk.EventBox()
+        background.set_visible_window(False)
+        self.topBox.add(background)
+        drawSmallScreenshotBackground(
+            background,
+            self.SCREENSHOT_WIDTH,
+            self.SCREENSHOT_HEIGHT,
+            appTheme.getDynamicPixbuf("screenshot/background_noneed.png")
+            )
+        utils.setHelpTooltip(background, __("The software does not screenshot"))
+        
+        self.box.show_all()
+    
+    @postGUI
+    def initUploadStatus(self):
+        '''Init upload status.'''
+        # Clean top box.
+        utils.containerRemoveAll(self.topBox)
+        
+        # Init background.
+        background = gtk.EventBox()
+        background.set_visible_window(False)
+        self.topBox.add(background)
+        drawSmallScreenshotBackground(
+            background,
+            self.SCREENSHOT_WIDTH,
+            self.SCREENSHOT_HEIGHT,
+            appTheme.getDynamicPixbuf("screenshot/background_upload.png")
+            )
+        background.connect(
+            "button-press-event", 
+            lambda w, e: sendCommand("xdg-open %s/screenshot/upload?n=%s" % (SERVER_ADDRESS, self.pkgName)))
+        
+        utils.setHelpTooltip(background, __("Upload screenshot"))
+        
+        self.box.show_all()
+        
+    def getTimestamp(self):
+        '''Get timestamp of screenshot.'''
+        timestampDict = evalFile("./screenshotTimestamp", True)    
+        
+        if timestampDict != None and timestampDict.has_key(self.pkgName):
+            return timestampDict[self.pkgName]
+        else:
+            return -1
+        
+    def updateTimestamp(self, timestamp):
+        '''Update timestamp.'''
+        timestampDict = evalFile("./screenshotTimestamp", True)    
+        if timestampDict == None:
+            timestampDict = {self.pkgName : timestamp}
+        else:
+            timestampDict[self.pkgName] = timestamp
+        writeFile("./screenshotTimestamp", str(timestampDict))
+        
+    def hasScreenshot(self):
+        '''Whether has screenshot.'''
+        screenshotPath = SCREENSHOT_DOWNLOAD_DIR + self.pkgName
+        if os.path.exists(screenshotPath) and os.listdir(screenshotPath) != []:
+            return True
+        else:
+            return False
         
     def stop(self):
         '''Stop download.'''
-        if self.proc != None and self.returnCode == DOWNLOAD_FAILED:
-            self.killed = True
-            self.proc.kill()
+        killProcess(self.proc)
             
-    def run(self):
-        '''Run'''
-        # Add wait widget.
-        utils.containerRemoveAll(self.imageBox)
-        waitAlign = gtk.Alignment()
-        waitAnimation = DynamicImage(
-            waitAlign,
-            appTheme.getDynamicPixbufAnimation("wait.gif"),
-            ).image
-        waitAlign.set(0.5, 0.5, 1.0, 1.0)
-        waitAlign.add(waitAnimation)
-        self.imageBox.add(waitAlign)
+    @postGUI
+    def show(self):
+        '''Show screenshot.'''
+        # Add images.
+        for image in os.listdir(os.path.join(SCREENSHOT_DOWNLOAD_DIR, self.pkgName))[0:self.SCREENSHOT_MAX_NUM]:
+            self.images.append(os.path.join(SCREENSHOT_DOWNLOAD_DIR, self.pkgName, image))
+            
+        # Show big screenshot.
+        self.showBigScreenshotArea(0)
         
-        # Download screenshot.
-        pkgName = utils.getPkgName(self.appInfo.pkg)
-        screenshotPath = SCREENSHOT_DOWNLOAD_DIR + pkgName
+        # Show small screenshot.
+        if len(self.images) > 1:
+            self.showSmallScreenshotArea()
+
+    def showBigScreenshotArea(self, index):
+        '''Show big screenshot.'''
+        # Update image index.
+        self.imageIndex = index
         
+        # Clean top box.
+        utils.containerRemoveAll(self.topBox)
+        
+        eventbox = gtk.EventBox()
+        eventbox.set_visible_window(False)
+        self.topBox.add(eventbox)
+        
+        self.bigScreenshotImage = gtk.image_new_from_pixbuf(
+            gtk.gdk.pixbuf_new_from_file_at_size(self.images[index], self.SCREENSHOT_WIDTH, self.SCREENSHOT_HEIGHT)
+            )
+        eventbox.add(self.bigScreenshotImage)
+        
+        eventbox.connect("button-press-event", lambda w, e: self.popupBigScreenshotWindow())
+        setCustomizeClickableCursor(
+            eventbox,
+            self.bigScreenshotImage,
+            appTheme.getDynamicPixbuf("screenshot/zoom_in.png"))
+        utils.setHelpTooltip(eventbox, __("Click Zoom In"))
+        
+        self.box.show_all()
+        
+    def popupBigScreenshotWindow(self):
+        '''Popup big screenshot window.'''
+        if self.images != [] and self.bigScreenshot == None:
+            self.bigScreenshot = BigScreenshot(self.scrolledWindow, self.images, self.imageIndex, self.closeBigScreenshotWindow)
+            
+    def closeBigScreenshotWindow(self):
+        '''Close big screenshot.'''
+        if self.bigScreenshot != None:
+            self.bigScreenshot.window.destroy()
+            self.bigScreenshot = None
+        
+    def getImageIndex(self):
+        '''Get image index.'''
+        return self.imageIndex
+        
+    def showSmallScreenshotArea(self):
+        '''Show small screenshot.'''
+        self.bottomBox.set_size_request(
+            self.SMALL_SCREENSHOT_WIDTH * self.SMALL_SCREENSHOT_COLUMN + (self.SMALL_SCREENSHOT_COLUMN + 1) * self.SMALL_SCREENSHOT_PADDING_X,
+            self.SMALL_SCREENSHOT_HEIGHT * self.SMALL_SCREENSHOT_ROW + (self.SMALL_SCREENSHOT_ROW + 1) * self.SMALL_SCREENSHOT_PADDING_Y,
+            )
+        
+        utils.containerRemoveAll(self.bottomBox)
+        
+        listLen = len(self.images)
+        boxlist = map (lambda n: gtk.HBox(), range(0, listLen / self.SMALL_SCREENSHOT_COLUMN + listLen % self.SMALL_SCREENSHOT_COLUMN))
+        for (index, box) in enumerate(boxlist):
+            if index == 0:
+                paddingTop = self.SMALL_SCREENSHOT_PADDING_Y
+            else:
+                paddingTop = self.SMALL_SCREENSHOT_PADDING_Y / 2
+            align = gtk.Alignment()
+            align.set(0.0, 0.0, 1.0, 1.0)
+            align.set_padding(
+                paddingTop,
+                self.SMALL_SCREENSHOT_PADDING_Y / 2, 
+                self.SMALL_SCREENSHOT_PADDING_X / 2,
+                self.SMALL_SCREENSHOT_PADDING_X / 2)
+            align.add(box)
+            self.bottomBox.pack_start(align, False, False)
+        
+        for (index, image) in enumerate(self.images):
+            box = boxlist[index / self.SMALL_SCREENSHOT_COLUMN]
+            box.pack_start(self.createSmallScreenshot(index, image), False, False)
+            
+        self.box.show_all()
+            
+    def createSmallScreenshot(self, index, image):
+        '''Create small screenshot.'''
+        align = gtk.Alignment()
+        align.set(0.0, 0.0, 1.0, 1.0)
+        align.set_padding(
+            0, 0,
+            self.SMALL_SCREENSHOT_PADDING_X / 2,
+            self.SMALL_SCREENSHOT_PADDING_X / 2)
+        pixbuf = gtk.gdk.pixbuf_new_from_file_at_size(image, self.SMALL_SCREENSHOT_WIDTH, self.SMALL_SCREENSHOT_HEIGHT)
+        eventbox = gtk.Button()
+        eventbox.set_size_request(self.SMALL_SCREENSHOT_WIDTH, self.SMALL_SCREENSHOT_HEIGHT)
+        eventbox.connect("button-press-event", lambda w, e: self.switchBigScreenshot(index))
+        eventbox.connect("expose-event", lambda w, e: exposeSmallScreenshot(w, e, pixbuf, index, self.getImageIndex))
+        align.add(eventbox)
+            
+        return align
+    
+    def switchBigScreenshot(self, index):
+        '''Switch big screenshot.'''
+        self.showBigScreenshotArea(index)
+        
+        self.bottomBox.queue_draw()    
+    
+    def downloadScreenshot(self):
+        '''Download screenshot.'''
         cmdline = [
             'aria2c',
+            "%s/screenshots/package?n=" % (SERVER_ADDRESS) + self.pkgName,
             "--dir=" + SCREENSHOT_DOWNLOAD_DIR,
-            "http://screenshots.debian.net/screenshot/" + pkgName,
+            '--file-allocation=none',
             '--auto-file-renaming=false',
             '--summary-interval=0',
-            '--no-conf',
             '--remote-time=true',
-            '--auto-save-interval=0',
-            '--continue',    
+            '--auto-save-interval=%s' % (self.autoSaveInterval),
+            '--check-integrity=true',
+            '--disable-ipv6=true',
+            # '--max-overall-download-limit=10K', # for debug
             ]
         
+        # Make software center can work with aria2c 1.9.x.
+        if ARIA2_MAJOR_VERSION >= 1 and ARIA2_MINOR_VERSION <= 9:
+            cmdline.append("--no-conf")
+            cmdline.append("--continue")
+        else:
+            cmdline.append("--no-conf=true")
+            cmdline.append("--continue=true")
+            
         # Append proxy configuration.
-        proxyString = readFirstLine("./proxy")
-        if proxyString != "":
-            cmdline.append("=".join(["--all-proxy", proxyString]))
+        # proxyString = utils.parseProxyString()
+        # if proxyString != None:
+        #     cmdline.append("=".join(["--all-proxy", proxyString]))
         
         self.proc = subprocess.Popen(cmdline)
-        self.returnCode = self.proc.wait()
+        self.proc.wait()
         
-        # Stop waiting widget.
-        utils.containerRemoveAll(self.imageBox)
-        self.imageBox.add(self.image)
-        self.imageBox.show_all()
-        
-        # Set screenshot.
-        if self.returnCode == DOWNLOAD_SUCCESS:
-            self.image.set_from_pixbuf(gtk.gdk.pixbuf_new_from_file_at_size(screenshotPath, self.width, self.height))
-            utils.setCustomizeClickableCursor(
-                self.imageBox, 
-                self.image, 
-                appTheme.getDynamicPixbuf("screenshot/zoom_in.png"))
-            utils.setHelpTooltip(self.imageBox, "点击放大")
-        else:
-            if self.killed:
-                pkgName = utils.getPkgName(self.appInfo.pkg)
-                screenshotPath = SCREENSHOT_DOWNLOAD_DIR + pkgName
-                if os.path.exists (screenshotPath):
-                    os.remove(screenshotPath)
-                    
-                print "Download process stop."
-            else:
-                # Add in black list if haven't found screenshot.
-                # Avoid send fetch request again. 
-                utils.addInList(self.noscreenshotList, pkgName)
-                    
-                # Set upload image.
-                self.image.set_from_pixbuf(gtk.gdk.pixbuf_new_from_file("../theme/default/image/screenshot/upload.png"))
+        # Extract zip file after download finish.
+        if self.proc.returncode == 0:
+            print "Download finish."
             
-                print "Haven't screenshot for %s !" % (pkgName)
+            # Extract zip file.
+            f = zipfile.ZipFile(os.path.join(SCREENSHOT_DOWNLOAD_DIR, self.pkgName) + ".zip")
+            f.extractall(os.path.join(SCREENSHOT_DOWNLOAD_DIR, self.pkgName))
+            f.close()
+            
+        # Delete zip file.
+        removeFile(os.path.join(SCREENSHOT_DOWNLOAD_DIR, self.pkgName) + ".zip")
+        
+    def run(self):
+        '''Run'''
+        self.fetchScreenshot()
+        
+        # self.initWaitStatus()
+        # self.initUploadStatus()
+        # self.initDownloadErrorStatus()
+        # self.initQueryErrorStatus()
+        
+    def fetchScreenshot(self):
+        '''Update.'''
+        # Init wait status.
+        self.initWaitStatus()
+        
+        try:
+            # Fetch screenshot information.
+            connection = urllib2.urlopen(("%s/screenshots/screenshot?n=" % (SERVER_ADDRESS)) + self.pkgName, timeout=GET_TIMEOUT)
+            voteJson = json.loads(connection.read())
+            
+            # Get timestamp.
+            timestamp = voteJson["timestamp"]
+            # print "***: %s" % (timestamp)
+            if timestamp == SCREENSHOT_NONEED:
+                self.initNoneedStatus()
+            elif timestamp == SCREENSHOT_UPLOAD:
+                self.initUploadStatus()
+            else:
+                currentTimestamp = self.getTimestamp()
+                if timestamp == currentTimestamp and self.hasScreenshot():
+                    self.show()
+                else:
+                    try:
+                        # Downloading.
+                        self.downloadScreenshot()
+                        
+                        # Update timestamp.
+                        self.updateTimestamp(timestamp)
+                        
+                        # Show.
+                        if self.hasScreenshot():
+                            self.show()
+                    except Exception, e:
+                        print "Download screenshot error: %s" % (e)
+                        
+                        if self.hasScreenshot():
+                            self.show()
+                            
+                            self.messageCallback(__("Download failed, use screenshot cache."))
+                        else:
+                            self.initDownloadErrorStatus()
+        except Exception, e:
+            print "Query screenshot error: %s" % (e)
+            
+            if self.hasScreenshot():
+                self.show()
 
+                self.messageCallback(__("Query failed, use screenshot cache."))
+            else:
+                self.initQueryErrorStatus()
+                
 class BigScreenshot(object):
     '''Big screenshot.'''
+    
+    CURSOR_BROWSE_PREV = 1
+    CURSOR_BROWSE_NEXT = 2
+    CURSOR_ZOOM_OUT = 3
 	
-    def __init__(self, widget, screenshotPath, exitCallback):
-        '''Init for big screenshot.'''
-        self.closeIconWidth = 11
-        self.closeIconHeight = 10
-        self.borderWidth = 4
-        self.borderTopHeight = 26
-        self.borderBottomHeight = 7
-        self.borderTopWidth = 7
-        self.borderBottomWidth = 7
+    def __init__(self, widget, images, imageIndex, exitCallback):
+        '''Init big screenshot.'''
+        # Init. 
+        self.widget = widget
+        self.images = images
+        self.imageIndex = imageIndex
+        self.exitCallback = exitCallback
         
-        self.topleftPixbuf = appTheme.getDynamicPixbuf("screenshot/background_topleft.png")
-        self.toprightPixbuf = appTheme.getDynamicPixbuf("screenshot/background_topright.png")
-        self.topmiddlePixbuf = appTheme.getDynamicPixbuf("screenshot/background_topmiddle.png")
-        self.bottomleftPixbuf = appTheme.getDynamicPixbuf("screenshot/background_bottomleft.png")
-        self.bottomrightPixbuf = appTheme.getDynamicPixbuf("screenshot/background_bottomright.png")
-        self.bottommiddlePixbuf = appTheme.getDynamicPixbuf("screenshot/background_bottommiddle.png")
-        self.leftPixbuf = appTheme.getDynamicPixbuf("screenshot/background_left.png")
-        self.rightPixbuf = appTheme.getDynamicPixbuf("screenshot/background_right.png")
-        self.closePixbuf = appTheme.getDynamicPixbuf("screenshot/close.png")
+        self.browsePadding = 80
+        self.x = self.y = self.width = self.height = 0
+        self.imgX = self.imgY = self.imgWidth = self.imgHeight = 0
+        self.cursorType = self.CURSOR_ZOOM_OUT
         
         self.window = gtk.Window()
         self.window.set_decorated(False)
         self.window.set_resizable(True)
         self.window.set_transient_for(widget.get_toplevel())
+        self.window.set_opacity(0.95)
         self.window.set_property("accept-focus", False)
-        
-        (wx, wy) = widget.window.get_origin()
-        rect = widget.get_allocation()
-        self.requestWidth = rect.width * 4 / 5
-        self.requestHeight = rect.height * 4 / 5
-        self.pixbuf = gtk.gdk.pixbuf_new_from_file_at_size(
-            screenshotPath, 
-            self.requestWidth,
-            self.requestHeight)
-        self.eventbox = gtk.EventBox()
-        self.window.add(self.eventbox)
-        self.width = self.pixbuf.get_width()
-        self.height = self.pixbuf.get_height()
-        self.windowWidth = self.width + self.borderWidth * 2
-        self.windowHeight = self.height + self.borderTopHeight + self.borderBottomHeight
-        self.windowX = wx + rect.x + (rect.width - self.width) / 2 - self.borderWidth
-        self.windowY = wy + rect.y + (rect.height - self.height) / 2 - self.borderTopHeight
-        self.closeIconAdjust = 8
-        self.closeIconX = self.windowX + self.windowWidth - self.closeIconWidth - self.closeIconAdjust
-        self.closeIconY = self.windowY + self.closeIconAdjust
-        self.window.move(self.windowX, self.windowY)
-        self.window.set_default_size(self.windowWidth, self.windowHeight)
-        
         self.window.connect("destroy", lambda w: exitCallback())
-        self.window.connect("button-press-event", self.click)
-        self.window.connect("size-allocate", lambda w, a: updateShape(w, a, POPUP_WINDOW_RADIUS))
-        self.eventbox.connect("expose-event", self.show)
-        self.eventbox.connect("button-press-event", lambda w, e: self.exit())
-        utils.setCustomizeClickableCursor(
-            self.eventbox, 
-            self.eventbox, 
-            appTheme.getDynamicPixbuf("screenshot/zoom_out.png"))
+        self.window.connect("expose-event", self.expose)
+        
+        self.eventbox = gtk.EventBox()
+        self.eventbox.set_visible_window(False)
+        self.eventbox.add_events(gtk.gdk.POINTER_MOTION_MASK)
+        self.eventbox.add_events(gtk.gdk.POINTER_MOTION_HINT_MASK)
+        self.eventbox.connect("motion-notify-event", self.updateCursor)
+        self.eventbox.connect("button-press-event", self.click)
+        self.window.add(self.eventbox)
+        
+        self.updateAllocate()
         
         self.window.show_all()
+        
+        self.widget.get_toplevel().connect("size-allocate", lambda w, a: self.updateAllocate())
+        self.widget.get_toplevel().connect("configure-event", lambda w, a: self.updateAllocate())
+        
+    def show(self):
+        '''Show.'''
+        self.window.show_all()
+    
+    def hide(self):
+        '''Hide.'''
+        self.window.hide_all()
+        
+    def click(self, widget, event):
+        '''Click.'''
+        point = event.get_coords()
+        if point != ():
+            (px, py) = point
+            if utils.isInRect((px, py), (0, 0, self.imgX, self.imgHeight)):
+                self.browsePrev()
+            elif utils.isInRect((px, py), (self.imgX + self.imgWidth, 0, self.imgX, self.imgHeight)):
+                self.browseNext()
+            else:
+                self.exit()
+        
+    def updateCursor(self, widget, event):
+        '''Update cursor.'''
+        point = event.get_coords()
+        if point != ():
+            (px, py) = point
+            if utils.isInRect((px, py), (0, 0, self.imgX, self.imgHeight)):
+                # Set default cursor.
+                widget.window.set_cursor(None)
+                
+                # Set cursor type.
+                self.cursorType = self.CURSOR_BROWSE_PREV
+                
+                self.window.queue_draw()
+            elif utils.isInRect((px, py), (self.imgX + self.imgWidth, 0, self.imgX, self.imgHeight)):
+                # Set default cursor.
+                widget.window.set_cursor(None)
+                
+                # Set cursor type.
+                self.cursorType = self.CURSOR_BROWSE_NEXT
+                
+                self.window.queue_draw()
+            else:
+                # Change to zoom out cursor.
+                widget.window.set_cursor(gtk.gdk.Cursor(
+                        gtk.gdk.display_get_default(),
+                        appTheme.getDynamicPixbuf("screenshot/zoom_out.png").getPixbuf(),
+                        0, 0))
+                
+                # Set cursor type.
+                self.cursorType = self.CURSOR_ZOOM_OUT
+                
+                self.window.queue_draw()
 
+    def updateAllocate(self):
+        '''Update allocate.'''
+        if self.widget.get_child().window != None:
+            (self.x, self.y) = self.widget.get_child().window.get_origin()
+            rect = self.widget.get_allocation()
+            (self.width, self.height) = (rect.width, rect.height)
+            
+            self.window.move(self.x, self.y)
+            self.window.resize(self.width, self.height)
+            
+            self.window.queue_draw()
+        
     def exit(self):
         '''Exit'''
         self.window.destroy()
         
-    def click(self, widget, event):
-        '''Click.'''
-        point = event.get_root_coords()
-        if point != ():
-            (px, py) = point
-            if utils.isInRect(
-                (px, py), 
-                (self.closeIconX, self.closeIconY,
-                 self.closeIconWidth, self.closeIconHeight)):
-                self.exit()
-        
-    def show(self, widget, event):
+    def browseNext(self):
+        '''Browse next.'''
+        if self.imageIndex == len(self.images) - 1:
+            self.imageIndex = 0
+        else:
+            self.imageIndex += 1
+            
+        self.window.queue_draw()
+    
+    def browsePrev(self):
+        '''Browse previous.'''
+        if self.imageIndex == 0:
+            self.imageIndex = len(self.images) - 1
+        else:
+            self.imageIndex -= 1
+            
+        self.window.queue_draw()
+
+    def expose(self, widget, event):
         '''Show.'''
-        allocation = widget.get_allocation()
-        
-        windowWidth, windowHeight = allocation.width, allocation.height
-        middleHeight = windowHeight - self.borderTopHeight - self.borderBottomHeight
-        
-        topmiddlePixbuf = self.topmiddlePixbuf.getPixbuf().scale_simple(
-            windowWidth - self.borderTopWidth * 2, 
-            self.borderTopHeight, 
-            gtk.gdk.INTERP_BILINEAR)
-        bottommiddlePixbuf = self.bottommiddlePixbuf.getPixbuf().scale_simple(
-            windowWidth - self.borderBottomWidth * 2, 
-            self.borderBottomHeight,
-            gtk.gdk.INTERP_BILINEAR)
-        leftPixbuf = self.leftPixbuf.getPixbuf().scale_simple(
-            self.borderWidth,
-            middleHeight,
-            gtk.gdk.INTERP_BILINEAR
-            )
-        rightPixbuf = self.rightPixbuf.getPixbuf().scale_simple(
-            self.borderWidth,
-            middleHeight,
-            gtk.gdk.INTERP_BILINEAR
-            )
-        middlePixbuf = gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, 
-                                      False, 8, 
-                                      windowWidth, middleHeight)
-        pixbuf = gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, True, 8, windowWidth, windowHeight)
-        
-        self.topleftPixbuf.getPixbuf().copy_area(
-            0, 0, self.borderTopWidth, self.borderTopHeight, pixbuf,
-            0, 0)
-        topmiddlePixbuf.copy_area(
-            0, 0, windowWidth - self.borderTopWidth * 2, self.borderTopHeight, pixbuf, 
-            self.borderTopWidth, 0)
-        self.toprightPixbuf.getPixbuf().copy_area(
-            0, 0, self.borderTopWidth, self.borderTopHeight, pixbuf,
-            windowWidth - self.borderTopWidth, 0)
-        self.bottomleftPixbuf.getPixbuf().copy_area(
-            0, 0, self.borderBottomWidth, self.borderBottomHeight, pixbuf,
-            0, windowHeight - self.borderBottomHeight)
-        bottommiddlePixbuf.copy_area(
-            0, 0, windowWidth - self.borderBottomWidth * 2, self.borderBottomHeight, pixbuf, 
-            self.borderBottomWidth, self.windowHeight - self.borderBottomHeight)
-        self.bottomrightPixbuf.getPixbuf().copy_area(
-            0, 0, self.borderBottomWidth, self.borderBottomHeight, pixbuf,
-            windowWidth - self.borderBottomWidth, windowHeight - self.borderBottomHeight)
-        middlePixbuf.copy_area(0, 0, windowWidth, middleHeight, pixbuf, 
-                               0, self.borderTopHeight)
-        leftPixbuf.copy_area(0, 0, self.borderWidth, middleHeight, pixbuf, 
-                             0, self.borderTopHeight)
-        rightPixbuf.copy_area(0, 0, self.borderWidth, middleHeight, pixbuf, 
-                              windowWidth - self.borderWidth,
-                              self.borderTopHeight)
-        self.pixbuf.copy_area(0, 0, self.width, self.height, pixbuf, self.borderWidth, self.borderTopHeight)
-        
+        # Init.
         cr = widget.window.cairo_create()
-        cr.set_source_pixbuf(pixbuf, 0, 0)
-        cr.paint()
+        rect = widget.get_allocation()
         
-        cr.set_source_pixbuf(self.closePixbuf.getPixbuf(), 
-                             self.windowWidth - self.closeIconWidth - self.closeIconAdjust,
-                             self.closeIconAdjust)
-        cr.paint()
+        # Draw background.
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.5)
+        cr.rectangle(0, 0, self.width, self.height)
+        cr.fill()
+        
+        # Draw screenshot.
+        pixbuf = gtk.gdk.pixbuf_new_from_file_at_size(
+            self.images[self.imageIndex],
+            self.width - self.browsePadding,
+            self.height - self.browsePadding,
+            )
+        self.imgWidth = pixbuf.get_width()
+        self.imgHeight = pixbuf.get_height()
+        self.imgX = rect.x + (self.width - self.imgWidth) / 2
+        self.imgY = rect.y + (self.height - self.imgHeight) / 2
+        drawPixbuf(cr, pixbuf, self.imgX, self.imgY)
+        
+        # Draw cursor.
+        if self.cursorType == self.CURSOR_BROWSE_PREV and len(self.images) > 1:
+            drawPixbuf(
+                cr, 
+                appTheme.getDynamicPixbuf("screenshot/prev.png").getPixbuf(),
+                self.imgX / 2,
+                self.imgHeight / 2,
+                )
+        elif self.cursorType == self.CURSOR_BROWSE_NEXT and len(self.images) > 1:
+            drawPixbuf(
+                cr, 
+                appTheme.getDynamicPixbuf("screenshot/next.png").getPixbuf(),
+                self.imgX * 3 / 2 + self.imgWidth,
+                self.imgHeight / 2,
+                )
+            
+        # Draw index.
+        fontSize = 20
+        height = 22
+        drawFont(
+            cr, 
+            "(%s/%s)" % (self.imageIndex + 1, len(self.images)),
+            fontSize,
+            appTheme.getDynamicColor("screenshotIndex").getColor(),
+            self.imgX + self.imgWidth / 2 - 2 * fontSize,
+            getFontYCoordinate(self.imgY + self.imgHeight + height / 2, height, fontSize)
+            )
         
         if widget.get_child() != None:
             widget.propagate_expose(widget.get_child(), event)
 
         return True
+    
+class FetchVoteInfo(td.Thread):
+    '''Fetch vote.'''
 
+    def __init__(self, pkgName, updateVoteCallback):
+        '''Init for fetch vote.'''
+        td.Thread.__init__(self)
+        self.setDaemon(True) # make thread exit when main program exit
+
+        self.pkgName = pkgName
+        self.updateVoteCallback = updateVoteCallback
+
+    def run(self):
+        '''Run.'''
+        try:
+            args = {'n' : self.pkgName, "t" : "vote"}
+            connection = urllib2.urlopen(
+                "%s/softcenter/v1/mark" % (SERVER_ADDRESS),
+                data=urllib.urlencode(args),
+                timeout=POST_TIMEOUT
+                )
+            voteJson = json.loads(connection.read())            
+            self.updateVoteCallback(voteJson)
+        except Exception, e:
+            print "Fetch vote data failed: %s." % (e)
+    
 #  LocalWords:  FFFFFF toggleTab xdg DDDDDD nums cuid cid feedbackLabel td
 #  LocalWords:  initActionStatus appAdditionBox uninstallingProgressbar appInfo
 #  LocalWords:  uninstallingFeedbackLabel switchToUninstalling UNINSTALLING
 #  LocalWords:  initAdditionStatus getPkgName updateInstallingStatus imageBox
 #  LocalWords:  installingProgressbar installingFeedbackLabel FetchScreenshot
-#  LocalWords:  updateUpgradingStatus upgradingProgressbar noscreenshotList
+#  LocalWords:  updateUpgradingStatus upgradingProgressbar 
 #  LocalWords:  upgradingFeedbackLabel updateUninstallingStatus setDaemon
 #  LocalWords:  returnCode waitAlign pkgName screenshotPath cmdline
 #  LocalWords:  subprocess

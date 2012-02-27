@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,29 +20,34 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from theme import *
 from appItem import *
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
+from theme import *
 import glib
 import gtk
-import pygtk
 import recommendView
-import utils
-pygtk.require('2.0')
 import sortedDict
+import utils
 
 class RecommendPage(object):
     '''Interface for recommend page.'''
 	
     def __init__(self, repoCache, switchStatus, downloadQueue, entryDetailCallback, selectCategoryCallback,
-                 launchApplicationCallback):
+                 launchApplicationCallback, updateDataDir):
         '''Init for recommend page.'''
         # Init.
         self.box = gtk.VBox()
         
         # Add slide bar.
-        self.slidebar = SlideBar(repoCache, switchStatus, downloadQueue, entryDetailCallback, launchApplicationCallback)
+        self.slidebar = SlideBar(
+            repoCache, 
+            switchStatus, 
+            downloadQueue, 
+            entryDetailCallback, 
+            launchApplicationCallback,
+            updateDataDir)
         
         # Add recommend view.
         self.recommendView = recommendView.RecommendView(
@@ -51,7 +56,8 @@ class RecommendPage(object):
             downloadQueue, 
             entryDetailCallback,
             selectCategoryCallback,
-            launchApplicationCallback)
+            launchApplicationCallback,
+            updateDataDir)
         self.appBox = gtk.VBox()
         self.appBox.pack_start(self.recommendView.box, False, False)
 
@@ -71,7 +77,7 @@ class RecommendPage(object):
         self.eventbox.connect("expose-event", lambda w, e: drawBackground(w, e, appTheme.getDynamicColor("background")))
         
         self.scrolledwindow = gtk.ScrolledWindow()
-        self.scrolledwindow.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+        self.scrolledwindow.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
         drawVScrollbar(self.scrolledwindow)
         utils.addInScrolledWindow(self.scrolledwindow, self.eventbox)
         
@@ -111,20 +117,22 @@ class SlideItem(DownloadItem):
         
         self.itemNameLabel = gtk.Label()
         self.itemNameLabel.set_markup(
-            "<span foreground='#FFFFFF' size='%s'>%s</span>"
-            % (LABEL_FONT_XXX_LARGE_SIZE, self.name))
+            "<span foreground='%s' size='%s'>%s</span>"
+            % (appTheme.getDynamicColor("slideText").getColor(),
+               LABEL_FONT_XXX_LARGE_SIZE, 
+               self.name))
         self.itemNameLabel.set_alignment(0.0, 0.5)
         self.itemNameBox = gtk.EventBox()
         self.itemNameBox.set_visible_window(False)
         self.itemNameBox.add(self.itemNameLabel)
         self.itemBox.pack_start(self.itemNameBox)
-        utils.setClickableCursor(self.itemNameBox)
+        setClickableCursor(self.itemNameBox)
         
         self.appAdditionBox = gtk.HBox()
         self.appAdditionAlign = gtk.Alignment()
         self.appAdditionAlign.set(1.0, 0.5, 0.0, 0.0)
         self.appAdditionAlign.add(self.appAdditionBox)
-        self.itemBox.pack_start(self.appAdditionAlign)
+        self.itemBox.pack_start(self.appAdditionAlign, False, False)
         
         self.initAdditionStatus()
         
@@ -143,7 +151,7 @@ class SlideItem(DownloadItem):
         elif status == APP_STATE_DOWNLOADING:
             self.initDownloadingStatus(self.appAdditionBox, True)
         elif status == APP_STATE_DOWNLOAD_PAUSE:
-             self.initDownloadPauseStatus(self.appAdditionBox, True, "#FFFFFF")
+             self.initDownloadPauseStatus(self.appAdditionBox, True, appTheme.getDynamicColor("slideText"))
         elif status == APP_STATE_INSTALLING:
             self.initInstallingStatus(True)
         elif status == APP_STATE_UPGRADING:
@@ -157,19 +165,18 @@ class SlideItem(DownloadItem):
         utils.containerRemoveAll(self.appAdditionBox)
         
         # Add action button.
-        (actionButtonBox, actionButtonAlign) = createActionButton(1.0, 0.5)
-        self.appAdditionBox.pack_start(actionButtonAlign)
+        (actionButtonBox, actionButtonAlign) = createActionButton()
+        self.appAdditionBox.pack_start(actionButtonAlign, False, False)
         if self.appInfo.status == APP_STATE_NORMAL:
             (appButton, appButtonAlign) = newActionButton(
-                "search", 0.5, 0.5, 
-                "cell", False, "安装", BUTTON_FONT_SIZE_LARGE, "bigButtonFont"
+                "search", 0.5, 0.5,  "cell", False, __("Action Install"), BUTTON_FONT_SIZE_LARGE, "bigButtonFont"
                 )
             appButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
             actionButtonBox.pack_start(appButtonAlign)
         elif self.appInfo.status == APP_STATE_UPGRADE:
             (appButton, appButtonAlign) = newActionButton(
                 "search", 0.5, 0.5, 
-                "cell", False, "升级", BUTTON_FONT_SIZE_LARGE, "bigButtonFont"
+                "cell", False, __("Action Update"), BUTTON_FONT_SIZE_LARGE, "bigButtonFont"
                 )
             appButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
             actionButtonBox.pack_start(appButtonAlign)
@@ -178,16 +185,16 @@ class SlideItem(DownloadItem):
             if execPath:
                 (appButton, appButtonAlign) = newActionButton(
                     "search", 0.5, 0.5, 
-                    "cell", False, "启动", BUTTON_FONT_SIZE_LARGE, "bigButtonFont"
+                    "cell", False, __("Action Startup"), BUTTON_FONT_SIZE_LARGE, "bigButtonFont"
                     )
                 appButton.connect("button-release-event", lambda widget, event: self.launchApplicationCallback(execPath))
                 actionButtonBox.pack_start(appButtonAlign)
             else:
                 appInstalledDynamicLabel = DynamicSimpleLabel(
                     actionButtonBox,
-                    "已安装",
-                    appTheme.getDynamicColor("installed"),
-                    LABEL_FONT_SIZE,
+                    __("Action Installed"),
+                    appTheme.getDynamicColor("slideText"),
+                    LABEL_FONT_LARGE_SIZE,
                     )
                 appInstalledLabel = appInstalledDynamicLabel.getLabel()
                 buttonImage = appTheme.getDynamicPixbuf("cell/update_hover.png").getPixbuf()
@@ -197,7 +204,7 @@ class SlideItem(DownloadItem):
 class SlideBar(object):
     '''Slide bar'''
 	
-    def __init__(self, repoCache, switchStatus, downloadQueue, entryDetailCallback, launchApplicationCallback):
+    def __init__(self, repoCache, switchStatus, downloadQueue, entryDetailCallback, launchApplicationCallback, updateDataDir):
         '''Init for slide bar.'''
         # Init.
         self.entryDetailCallback = entryDetailCallback
@@ -209,9 +216,11 @@ class SlideBar(object):
         self.times = 10
         self.interval = 300 / self.times
         self.smallImagePaddingY = 10
+        self.hoverTimeoutIds = {}
+        self.hoverTimeout = 100
 
         self.repoCache = repoCache
-        self.slideDir = "../updateData/slide/%s" % (getDefaultLanguage())
+        self.slideDir = updateDataDir + "slide/%s" % (getDefaultLanguage())
         self.infoList = evalFile("%s/index.txt" % (self.slideDir))
         self.itemDict = sortedDict.SortedDict(map(lambda (pkgName, _): (pkgName, None), self.infoList))
         self.initItems(switchStatus, downloadQueue)
@@ -244,7 +253,7 @@ class SlideBar(object):
         self.drawingArea.connect(
             "button-press-event",
             lambda w, e: self.entryDetailView())
-        utils.setClickableCursor(self.drawingArea)
+        setClickableCursor(self.drawingArea)
         self.drawingArea.queue_draw()
         
         self.slideItemBox = gtk.VBox()
@@ -295,19 +304,19 @@ class SlideBar(object):
         '''Update downloading status.'''
         if self.itemDict.has_key(pkgName):
             appItem = self.itemDict[pkgName]
-            appItem.updateDownloadingStatus(progress, feedback, "#FFFFFF")
+            appItem.updateDownloadingStatus(progress, feedback, appTheme.getDynamicColor("slideText").getColor())
             
     def updateInstallingStatus(self, pkgName, progress, feedback):
         '''Update installing status.'''
         if self.itemDict.has_key(pkgName):
             appItem = self.itemDict[pkgName]
-            appItem.updateInstallingStatus(progress, feedback, "#FFFFFF")
+            appItem.updateInstallingStatus(progress, feedback, appTheme.getDynamicColor("slideText").getColor())
             
     def updateUpgradingStatus(self, pkgName, progress, feedback):
         '''Update upgrading status.'''
         if self.itemDict.has_key(pkgName):
             appItem = self.itemDict[pkgName]
-            appItem.updateUpgradingStatus(progress, feedback, "#FFFFFF")
+            appItem.updateUpgradingStatus(progress, feedback, appTheme.getDynamicColor("slideText").getColor())
             
     def getSlideItem(self, index):
         '''Get slide item.'''
@@ -326,6 +335,7 @@ class SlideBar(object):
                                (self.imageHeight - self.smallImagePaddingY * 2) / 3)
         image.connect("expose_event", lambda w, e: self.exposeSmallArea(w, e, index))
         image.queue_draw()
+        setClickableCursor(image)
         
         imageAlign = gtk.Alignment()
         if index == 1:
@@ -337,9 +347,24 @@ class SlideBar(object):
         imageAlign.add(image)
         labelBox = gtk.EventBox()
         labelBox.add(imageAlign)
-        labelBox.connect("enter-notify-event", lambda widget, event: self.start(index))
+        labelBox.connect("button-press-event", lambda widget, event: self.start(index))
+        labelBox.connect("enter-notify-event", lambda w, e: self.onSlideLabelEnter(index))
+        labelBox.connect("leave-notify-event", lambda w, e: self.onSlideLabelLeave(index))
         labelBox.connect("expose-event", lambda w, e: drawBackground(w, e, appTheme.getDynamicColor("background")))
         self.labelBox.pack_start(labelBox, True, True)
+        
+    def onSlideLabelEnter(self, index):
+        '''On slide label enter.'''
+        # Start slide when 100 milliseconds after hover.
+        if not self.hoverTimeoutIds.has_key(index):
+            self.hoverTimeoutIds[index] = glib.timeout_add(self.hoverTimeout, lambda : self.start(index))
+        
+    def onSlideLabelLeave(self, index):
+        '''On slide label leave.'''
+        # Remove hover timeout handler.
+        if self.hoverTimeoutIds.has_key(index):
+            glib.source_remove(self.hoverTimeoutIds[index])
+            del self.hoverTimeoutIds[index]
         
     def exposeSmallArea(self, drawArea, event, index):
         '''Expose small area.'''
@@ -400,7 +425,7 @@ class SlideBar(object):
         '''Start show slide.'''
         # Stop if index same as current one.
         if self.index == index:
-            return
+            return False
         # Just start slide when stop.
         elif self.stop:
             # Get path.
@@ -422,6 +447,8 @@ class SlideBar(object):
                         
             # Start slide.
             glib.timeout_add(self.interval, self.slide)
+            
+            return False
             
     def updateSlideItem(self):
         '''Update slide item.'''

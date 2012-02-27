@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,16 +20,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from theme import *
 from appItem import *
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
+from theme import *
 import appView
 import gtk
 import pango
-import pygtk
 import utils
-pygtk.require('2.0')
 
 class IgnoreItem(object):
     '''Application item.'''
@@ -77,7 +76,9 @@ class IgnoreItem(object):
         self.itemFrame.add(self.itemEventBox)
         
         # Add check box.
-        checkPadding = 10
+        checkPaddingLeft = 20
+        checkPaddingRight = 15
+        checkPaddingY = 10
         self.checkButton = gtk.CheckButton()
         self.checkButton.set_active(self.getSelectStatusCallback(utils.getPkgName(self.appInfo.pkg)))
         self.checkButton.connect("toggled", lambda w: self.toggleSelectStatus())
@@ -89,12 +90,12 @@ class IgnoreItem(object):
             )
         self.checkAlign = gtk.Alignment()
         self.checkAlign.set(0.5, 0.5, 0.0, 0.0)
-        self.checkAlign.set_padding(checkPadding, checkPadding, checkPadding, checkPadding)
+        self.checkAlign.set_padding(checkPaddingY, checkPaddingY, checkPaddingLeft, checkPaddingRight)
         self.checkAlign.add(self.checkButton)
         self.itemBox.pack_start(self.checkAlign, False, False)
         
-        self.appBasicBox = createItemBasicBox(self.appInfo, 300, self.itemBox, self.entryDetailView, True) 
-        self.itemBox.pack_start(self.appBasicBox, True, True)
+        self.appBasicView = AppBasicView(self.appInfo, 300 + APP_BASIC_WIDTH_ADJUST, self.itemBox, self.entryDetailView) 
+        self.itemBox.pack_start(self.appBasicView.align, True, True)
         
         self.appAdditionBox = gtk.HBox()
         self.appAdditionAlign = gtk.Alignment()
@@ -142,7 +143,6 @@ class IgnoreItem(object):
         # Add application vote information.
         self.appVoteView = VoteView(
             self.appInfo, PAGE_UPGRADE, 
-            self.entryDetailCallback,
             self.sendVoteCallback)
         self.appAdditionBox.pack_start(self.appVoteView.eventbox, False, False)
         
@@ -156,7 +156,7 @@ class IgnoreItem(object):
         
         # Add ignore button.
         (ignoreLabel, ignoreEventBox) = setDefaultClickableDynamicLabel(
-            "重新提醒",
+            __("Notify again"),
             "appIgnore",
             )
         ignoreEventBox.connect("button-press-event", 
@@ -169,10 +169,11 @@ class IgnoreItem(object):
         ignoreAlign.add(ignoreEventBox)
         self.appAdditionBox.pack_start(ignoreAlign, False, False)
         
-    def updateVoteView(self, starLevel, voteNum):
+    def updateVoteView(self, starLevel, commentNum):
         '''Update vote view.'''
         if self.appInfo.status == APP_STATE_UPGRADE and self.appVoteView != None:
-            self.appVoteView.updateVote(starLevel, voteNum)
+            self.appVoteView.updateVote(starLevel, commentNum)
+            self.appBasicView.updateCommentNum(commentNum)
                 
 class IgnoreView(appView.AppView):
     '''Application view.'''
@@ -250,27 +251,30 @@ class IgnoreView(appView.AppView):
         self.eventbox.add(self.box)
         
         if self.appNum == 0:
-            notifyBox = gtk.HBox()
+            if (getDefaultLanguage() == "default"):
+                paddingX = 50
+            else:
+                paddingX = 50
+            
+            notifyBox = gtk.VBox()
             notifyAlign = gtk.Alignment()
             notifyAlign.set(0.5, 0.5, 0.0, 0.0)
             notifyAlign.add(notifyBox)
             self.box.pack_start(notifyAlign)
             
-            notifyIconAlignX = 5
-            notifyIcon = gtk.EventBox()
-            notifyIcon.set_visible_window(False)
-            simpleButtonSetBackground(notifyIcon, False, False, appTheme.getDynamicPixbuf("update/smile.gif"))
-            notifyIconAlign = gtk.Alignment()
-            notifyIconAlign.set(0.5, 1.0, 0.0, 0.0)
-            notifyIconAlign.set_padding(0, 0, notifyIconAlignX, notifyIconAlignX)
-            notifyIconAlign.add(notifyIcon)
-            notifyBox.pack_start(notifyIconAlign)
+            tipImage = gtk.image_new_from_pixbuf(
+                gtk.gdk.pixbuf_new_from_file("../icon/tips/%s/notifyTip.png" % (getDefaultLanguage())))
+            tipAlign = gtk.Alignment()
+            tipAlign.set_padding(0, 0, paddingX, 0)
+            tipAlign.add(tipImage)
+            notifyBox.pack_start(tipAlign)
             
-            notifyLabel = gtk.Label()
-            notifyLabel.set_markup(
-                "<span foreground='#1A38EE' size='%s'>%s</span>"
-                % (LABEL_FONT_XXX_LARGE_SIZE, "没有软件需要重新提醒."))
-            notifyBox.pack_start(notifyLabel, False, False)
+            penguinImage = gtk.image_new_from_pixbuf(
+                gtk.gdk.pixbuf_new_from_file("../icon/tips/penguin.png"))
+            penguinAlign = gtk.Alignment()
+            penguinAlign.set_padding(0, 0, 0, paddingX)
+            penguinAlign.add(penguinImage)
+            notifyBox.pack_start(penguinAlign)
             
             self.box.show_all()
         else:

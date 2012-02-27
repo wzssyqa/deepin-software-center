@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,14 +23,12 @@
 from appItem import *
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
 import appView
 import gtk
 import pango
-import pygtk
-import utils
-pygtk.require('2.0')
-
 import urllib2
+import utils
 
 class RepoItem(DownloadItem):
     '''Application item.'''
@@ -67,7 +65,7 @@ class RepoItem(DownloadItem):
         self.itemFrame = gtk.Alignment()
         self.itemFrame.set(0.0, 0.5, 1.0, 1.0)
         
-        self.appBasicBox = createItemBasicBox(self.appInfo, 200, self.itemBox, self.entryDetailView)
+        self.appBasicView = AppBasicView(self.appInfo, 200 + APP_BASIC_WIDTH_ADJUST, self.itemBox, self.entryDetailView)
         
         # Widget that status will change.
         self.installingProgressbar = None
@@ -77,7 +75,7 @@ class RepoItem(DownloadItem):
         self.upgradingFeedbackLabel = None
 
         # Connect components.
-        self.itemBox.pack_start(self.appBasicBox, True, True, self.APP_LEFT_PADDING_X)
+        self.itemBox.pack_start(self.appBasicView.align, True, True, self.APP_LEFT_PADDING_X)
         
         self.appAdditionBox = gtk.HBox()
         self.appAdditionAlign = gtk.Alignment()
@@ -128,7 +126,6 @@ class RepoItem(DownloadItem):
         # Add application vote information.
         self.appVoteView = VoteView(
             self.appInfo, PAGE_REPO, 
-            self.entryDetailCallback,
             self.sendVoteCallback)
         self.appAdditionBox.pack_start(self.appVoteView.eventbox, False, False)
         
@@ -153,14 +150,14 @@ class RepoItem(DownloadItem):
         if self.appInfo.status == APP_STATE_NORMAL:
             (appButton, appButtonAlign) = newActionButton(
                 "install", 0.5, 0.5, 
-                "cell", False, "安装", BUTTON_FONT_SIZE_SMALL, "buttonFont"
+                "cell", False, __("Action Install"), BUTTON_FONT_SIZE_SMALL, "buttonFont"
                 )
             appButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
             actionButtonBox.pack_start(appButtonAlign)
         elif self.appInfo.status == APP_STATE_UPGRADE:
             (appButton, appButtonAlign) = newActionButton(
                 "update", 0.5, 0.5, 
-                "cell", False, "升级", BUTTON_FONT_SIZE_SMALL, "buttonFont"
+                "cell", False, __("Action Update"), BUTTON_FONT_SIZE_SMALL, "buttonFont"
                 )
             appButton.connect("button-release-event", lambda widget, event: self.switchToDownloading())
             actionButtonBox.pack_start(appButtonAlign)
@@ -169,14 +166,14 @@ class RepoItem(DownloadItem):
             if execPath:
                 (appButton, appButtonAlign) = newActionButton(
                     "update", 0.5, 0.5, 
-                    "cell", False, "启动", BUTTON_FONT_SIZE_SMALL, "buttonFont"
+                    "cell", False, __("Action Startup"), BUTTON_FONT_SIZE_SMALL, "buttonFont"
                     )
                 appButton.connect("button-release-event", lambda widget, event: self.launchApplicationCallback(execPath))
                 actionButtonBox.pack_start(appButtonAlign)
             else:
                 appInstalledDynamicLabel = DynamicSimpleLabel(
                     actionButtonBox,
-                    "已安装",
+                    __("Action Installed"),
                     appTheme.getDynamicColor("installed"),
                     LABEL_FONT_SIZE,
                     )
@@ -185,10 +182,11 @@ class RepoItem(DownloadItem):
                 appInstalledLabel.set_size_request(buttonImage.get_width(), buttonImage.get_height())
                 actionButtonBox.pack_start(appInstalledLabel)
     
-    def updateVoteView(self, starLevel, voteNum):
+    def updateVoteView(self, starLevel, commentNum):
         '''Update vote view.'''
         if self.appInfo.status in [APP_STATE_NORMAL, APP_STATE_UPGRADE, APP_STATE_INSTALLED] and self.appVoteView != None:
-            self.appVoteView.updateVote(starLevel, voteNum)
+            self.appVoteView.updateVote(starLevel, commentNum)
+            self.appBasicView.updateCommentNum(commentNum)
                 
 class RepoView(appView.AppView):
     '''Application view.'''

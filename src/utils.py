@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,22 +21,21 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from constant import *
+from lang import __, getDefaultLanguage, DEFAULT_LANG
 from math import pi
 import cairo
 import gtk
-import hashlib
 import locale
 import math
 import os
 import pango
 import pangocairo
-import pygtk
+import socket
 import stat
 import subprocess
 import threading as td
 import time
 import uuid
-pygtk.require('2.0')
 
 def isDoubleClick(event):
     '''Whether an event is double click?'''
@@ -97,6 +96,15 @@ def getPkgName(pkg):
     '''Get package name.'''
     return pkg.name
 
+def printExecTime(func):
+    '''Print execute time.'''
+    def wrap(*a, **kw):
+        startTime = time.time()
+        ret = func(*a, **kw)
+        print "%s time: %s" % (str(func), time.time() - startTime)
+        return ret
+    return wrap
+
 def getPkgExecPath(pkg):
     '''Get path of execute file.'''
     execPath = "../pkgData/pkgPath/%s" % (pkg.name)
@@ -110,29 +118,43 @@ def getPkgExecPath(pkg):
     else:
         return None
     
-def readFile(filepath):
+def readFile(filepath, checkExists=False):
     '''Read file.'''
-    rFile = open(filepath, "r")
-    content = rFile.read()
-    rFile.close()
-    
-    return content
+    if checkExists and not os.path.exists(filepath):
+        return ""
+    else:
+        rFile = open(filepath, "r")
+        content = rFile.read()
+        rFile.close()
+        
+        return content
 
-def readFirstLine(filepath):
+def readFirstLine(filepath, checkExists=False):
     '''Read first line.'''
-    rFile = open(filepath, "r")
-    content = rFile.readline().split("\n")[0]
-    rFile.close()
-    
-    return content
+    if checkExists and not os.path.exists(filepath):
+        return ""
+    else:
+        rFile = open(filepath, "r")
+        content = rFile.readline().split("\n")[0]
+        rFile.close()
+        
+        return content
 
-def evalFile(filepath):
+def evalFile(filepath, checkExists=False):
     '''Eval file content.'''
-    readFile = open(filepath, "r")
-    content = eval(readFile.read())
-    readFile.close()
-    
-    return content
+    if checkExists and not os.path.exists(filepath):
+        return None
+    else:
+        try:
+            readFile = open(filepath, "r")
+            content = eval(readFile.read())
+            readFile.close()
+            
+            return content
+        except Exception, e:
+            print e
+            
+            return None
 
 def writeFile(filepath, content):
     '''Write file.'''
@@ -301,15 +323,6 @@ def postGUI(func):
         return ret
     return wrap
 
-def printExecTime(func):
-    '''Print execute time.'''
-    def wrap(*a, **kw):
-        startTime = time.time()
-        ret = func(*a, **kw)
-        print "%s time: %s" % (str(func), time.time() - startTime)
-        return ret
-    return wrap
-
 def printEnv():
     '''Print environment variable.'''
     for param in os.environ.keys():
@@ -371,6 +384,15 @@ def getAria2Version():
     
     return (int(versionList[0]), int(versionList[1]), int(versionList[2]))
 
+def getOSVersion():
+    '''Get OS version.'''
+    versionInfos = getCommandOutputFirstLine(["lsb_release", "-i"]).split()
+    
+    if len(versionInfos) > 0:
+        return versionInfos[-1]
+    else:
+        return ""
+
 def compareCandidates((preA, matchA, restA, pkgA), (preB, matchB, restB, pkgB)):
     '''Compare candidates.'''
     lenA = len(preA)
@@ -388,159 +410,19 @@ def getCurrentTime():
     '''Get current time.'''
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
 
-def setClickableCursor(widget):
-    '''Set click-able cursor.'''
-    # Use widget in lambda, and not widget pass in function.
-    # Otherwise, if widget free before callback, you will got error:
-    # free variable referenced before assignment in enclosing scope, 
-    widget.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
-    widget.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
-        
-def setCursor(widget, cursorType):
-    '''Set cursor.'''
-    widget.window.set_cursor(gtk.gdk.Cursor(cursorType))
-    
-    return False
-
-def setDefaultCursor(widget):
-    '''Set default cursor.'''
-    widget.window.set_cursor(None)
-    
-    return False
-
-def setLabelMarkup(widget, label, normalMarkup, activeMarkup):
-    '''Set label markup.'''
-    widget.connect("enter-notify-event", lambda w, e: setMarkup(label, activeMarkup))
-    widget.connect("leave-notify-event", lambda w, e: setMarkup(label, normalMarkup))
-    
-def setMarkup(label, markup):
-    '''Set markup.'''
-    label.set_markup(markup)
-    
-    return False
-
-def setDefaultToggleLabel(content, status, setStatus, getStatus, selectDefault=True):
-    '''Set default toggle label, return label and eventbox.'''
-    normalColor = '#1A3E88'
-    hoverColor = '#0084FF'
-    selectColor = '#000000'
-    
-    label = gtk.Label()
-    eventbox = gtk.EventBox()
-    if selectDefault:
-        initMarkup = "<span foreground='%s' size='%s' underline='single'>%s</span>" % (selectColor, LABEL_FONT_SIZE, content)
-    else:
-        initMarkup = "<span foreground='%s' size='%s'>%s</span>" % (normalColor, LABEL_FONT_SIZE, content)
-    setToggleLabel(
-        eventbox,
-        label,
-        initMarkup,
-        "<span foreground='%s' size='%s' >%s</span>" % (normalColor, LABEL_FONT_SIZE, content),
-        "<span foreground='%s' size='%s' >%s</span>" % (hoverColor, LABEL_FONT_SIZE, content),
-        "<span foreground='%s' size='%s' underline='single'>%s</span>" % (selectColor, LABEL_FONT_SIZE, content),
-        status,
-        setStatus,
-        getStatus
-        )
-    
-    return (label, eventbox)
-
-def setToggleLabel(widget, label, initMarkup, normalMarkup, hoverMarkup, selectMarkup, labelId, setLabelId, getCurrentId):
-    '''Set toggle label.'''
-    # Init.
-    widget.set_visible_window(False)
-    widget.add(label)
-    label.set_markup(initMarkup)
-    
-    # Set label id.
-    widget.connect("button-press-event", lambda w, e: setLabelId(labelId))
-    
-    # Set label markup.
-    widget.connect("enter-notify-event", 
-                   lambda w, e: setLabelEntryMarkup(label, hoverMarkup, selectMarkup, labelId, getCurrentId))
-    widget.connect("leave-notify-event", 
-                   lambda w, e: setLabelLeaveMarkup(label, normalMarkup, selectMarkup, labelId, getCurrentId))
-    
-    # Set label cursor.
-    widget.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
-    widget.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
-    
-def setLabelEntryMarkup(label, hoverMarkup, selectMarkup, labelId, getCurrentId):
-    '''Set label markup color.'''
-    if labelId == getCurrentId():
-        setMarkup(label, selectMarkup)
-    else:
-        setMarkup(label, hoverMarkup)    
-        
-def setLabelLeaveMarkup(label, normalMarkup, selectMarkup, labelId, getCurrentId):
-    '''Set label markup color.'''
-    if labelId == getCurrentId():
-        setMarkup(label, selectMarkup)
-    else:
-        setMarkup(label, normalMarkup)    
-
-def setDefaultClickableLabel(content, normalColor="#1A3E88", hoverColor="#0084FF", size=LABEL_FONT_SIZE, resetAfterClick=True):
-    '''Create clickable label and return label and eventbox.'''
-    # Init.
-    label = gtk.Label()
-    label.set_markup(
-        "<span foreground='%s' size='%s'>%s</span>" % (normalColor, size, content))
-    eventbox = gtk.EventBox()
-    eventbox.set_visible_window(False)
-    eventbox.add(label)
-    setClickableLabel(
-        eventbox,
-        label,
-        "<span foreground='%s' size='%s'>%s</span>" % (normalColor, size, content),
-        "<span foreground='%s' size='%s'>%s</span>" % (hoverColor, size, content),
-        resetAfterClick
-        )
-    
-    return (label, eventbox)
-
-def setClickableDynamicLabel(widget, dLabel, resetAfterClick=True):
-    '''Set click-able label.'''
-    # Set label markup.
-    widget.connect("enter-notify-event", lambda w, e: dLabel.hoverLabel())
-    widget.connect("leave-notify-event", lambda w, e: dLabel.normalLabel())
-    
-    # Set label cursor.
-    widget.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
-    widget.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
-    
-    # Reset color when click widget.
-    if resetAfterClick:
-        widget.connect("button-press-event", lambda w, e: dLabel.normalLabel())
-        
-def setClickableLabel(widget, label, normalMarkup, activeMarkup, resetAfterClick=True):
-    '''Set click-able label.'''
-    # Set label markup.
-    widget.connect("enter-notify-event", lambda w, e: setMarkup(label, activeMarkup))
-    widget.connect("leave-notify-event", lambda w, e: setMarkup(label, normalMarkup))
-    
-    # Set label cursor.
-    widget.connect("enter-notify-event", lambda w, e: setCursor(w, gtk.gdk.HAND2))
-    widget.connect("leave-notify-event", lambda w, e: setDefaultCursor(w))
-    
-    # Reset color when click widget.
-    if resetAfterClick:
-        widget.connect("button-press-event", lambda w, e: setMarkup(label, normalMarkup))
-
-def setCustomizeClickableCursor(eventbox, widget, cursorDPixbuf):
-    '''Set click-able cursor.'''
-    eventbox.connect("enter-notify-event", lambda w, e: setCustomizeCursor(widget, cursorDPixbuf))
-    eventbox.connect("leave-notify-event", lambda w, e: setDefaultCursor(widget))
-        
-def setCustomizeCursor(widget, cursorDPixbuf):
-    '''Set cursor.'''
-    widget.window.set_cursor(gtk.gdk.Cursor(gtk.gdk.display_get_default(),
-                                            cursorDPixbuf.getPixbuf(),
-                                            0, 0))
-    return False
-    
 def runCommand(command):
     '''Run command.'''
     subprocess.Popen("nohup %s > /dev/null 2>&1" % (command), shell=True)
+    
+def sendCommand(command):
+    '''Send command.'''
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  
+    try:
+        s.sendto(command, SOCKET_COMMANDPROXY_ADDRESS)
+    except Exception, e:
+        print "sendCommand got error: %s" % (e)
+    finally:
+        s.close()
     
 def touchFile(filepath):
     '''Touch file.'''
@@ -552,14 +434,23 @@ def touchFile(filepath):
     # Touch file.
     open(filepath, "w").close()
 
-def getDefaultLanguage():
-    '''Get default language.'''
-    (lang, _) = locale.getdefaultlocale()
-    if lang in ["zh_CN", "zh_TW"]:
-        return lang
-    else:
-        return "default"
-
+def showVersionTooltip(widget, pkg):
+    '''Show version tooltip.'''
+    newestVersion = getPkgNewestVersion(pkg)
+    currentVersion = getPkgVersion(pkg)
+    if newestVersion == currentVersion:
+        setHelpTooltip(
+            widget,
+            "%s\n%s: %s" % (__("Click Show Detail"), __("Current Version"), currentVersion))
+    else:    
+        setHelpTooltip(
+            widget,
+            "%s\n%s: %s\n%s: %s" % (__("Click Show Detail"), 
+                                    __("Current Version"), 
+                                    currentVersion, 
+                                    __("Upgrade Version"),
+                                    newestVersion))
+    
 def setHelpTooltip(widget, helpText):
     '''Set help tooltip.'''
     widget.connect("enter-notify-event", lambda w, e: showHelpTooltip(w, helpText))
@@ -655,11 +546,16 @@ def removeDirectory(path):
             os.remove(fullPath)
     os.rmdir(path)        
 
-def getUserID():
-    '''Get Mac Address and MD5.'''
-    macAddress = uuid.getnode()
-    return (hashlib.md5(str(macAddress))).hexdigest()
-
+def getUniqueId():
+    '''Get unique id.'''
+    uniqueId = evalFile("./uuid", True)
+    if uniqueId:
+        return uniqueId
+    else:
+        uId = int(uuid.uuid1()) # this is unique id of current hardware and time, so it's very safe for user. :)
+        writeFile("./uuid", str(uId))
+        return uId
+        
 def getLastUpdateHours(filepath):
     """
     Return the number of hours since last update.
@@ -699,6 +595,40 @@ def sortAlpha(eList):
     '''Get alpha list.'''
     return sorted(eList, key=lambda e: e)
 
+def sortMatchKeyword(eList, keyword):
+    '''Sort list by match keyword.'''
+    return sorted(eList, cmp=lambda x, y: cmpMatchKeyword(x, y, keyword))
+
+def cmpMatchKeyword(x, y, keyword):
+    '''Compare match keyword.'''
+    xMatches = x.split(keyword)
+    yMatches = y.split(keyword)
+    xMatchPre, xMatchPost = xMatches[0], ''.join(xMatches[1:])
+    yMatchPre, yMatchPost = yMatches[0], ''.join(yMatches[1:])
+    xMatchTimes = len(xMatches)
+    yMatchTimes = len(yMatches)
+    xLenPre = len(xMatchPre)
+    xLenPost = len(xMatchPost)
+    yLenPre = len(yMatchPre)
+    yLenPost = len(yMatchPost)
+    
+    if xLenPre < yLenPre:
+        return -1
+    elif xLenPre > yLenPre:
+        return 1
+    elif xLenPost < yLenPost:
+        return -1
+    elif xLenPost > yLenPost:
+        return 1
+    elif xMatchTimes > yMatchTimes:
+        return -1
+    elif xMatchTimes < yMatchTimes:
+        return 1
+    elif len(xMatchPost.split(keyword)[0]) < len(yMatchPost.split(keyword)[0]):
+        return -1
+    else:
+        return cmp(xMatchPre + xMatchPost, yMatchPre + yMatchPost)
+
 def todayStr():
     '''Get string of today.'''
     structTime = time.localtime()
@@ -723,6 +653,45 @@ def getDirSize(dirname):
             totalSize += os.path.getsize(os.path.join(root, filepath))
             
     return totalSize
+
+def getEntryText(entry):
+    '''Get entry text.'''
+    return entry.get_text().split(" ")[0]
+
+def parseProxyString():
+    '''Parse proxy string.'''
+    proxyDict = evalFile("./proxy", True)
+    if proxyDict != None and proxyDict.has_key("address") and "://" in proxyDict["address"]:
+        [addressPre, addressPost] = proxyDict["address"].split("://")
+        if proxyDict.has_key("port"):
+            port = ":" + proxyDict["port"]
+        else:
+            port = ""
+        if proxyDict.has_key("user"):
+            user = proxyDict["user"]
+        else:
+            user = ""
+        if proxyDict.has_key("password"):
+            password = ":" + proxyDict["password"]
+        else:
+            password = ""
+            
+        if user == "" and password == "":
+            proxyString = addressPre + "://" + user + password + addressPost + port
+        else:
+            proxyString = addressPre + "://" + user + password + "@" + addressPost + port
+            
+        return proxyString
+    else:
+        return None
+    
+def killProcess(proc):
+    '''Kill process.'''
+    try:
+        if proc != None:
+            proc.kill()
+    except Exception, e:
+        pass
 
 #  LocalWords:  halfstar AppIcon pkgInfo shortDesc zh TW longDesc downloadSize
 #  LocalWords:  getPkgInstalledSize getPkgDependSize useSize uname libdevel ZB

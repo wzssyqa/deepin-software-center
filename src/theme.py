@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from lang import __, getDefaultLanguage
 from utils import *
 import gobject, gtk
 import os
@@ -333,8 +334,15 @@ class Theme(object):
     def __init__(self):
         '''Init theme.'''
         # Init.
-        # self.themeName = "default"
-        self.themeName = evalFile("../theme/list.txt")[0]
+        themes = os.listdir("../theme")
+        themeName = readFile("./defaultTheme", True)
+        if themeName == "" or not themeName in themes:
+            if "default" in themes:
+                self.themeName = "default"
+            else:
+                self.themeName = themes[0]
+        else:
+            self.themeName = themeName
         self.colorPath = "colors.txt"
         self.drawTypePath = "types.txt"
         self.ticker = 0
@@ -460,6 +468,9 @@ class Theme(object):
         # Update animation.
         for (path, animation) in self.animationDict.items():
             animation.update(self.getAnimationPath(path))
+            
+        # Remeber theme.
+        writeFile("./defaultTheme", newThemeName)
             
 # Init.
 appTheme = Theme()            

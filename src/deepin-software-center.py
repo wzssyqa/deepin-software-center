@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 #
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,56 +20,55 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from theme import *
 from constant import *
 from copy import deepcopy
 from draw import *
+from lang import __, getDefaultLanguage
+from theme import *
 from tooltips import *
 from utils import postGUI
-import themeSelect
-import moreWindow
-import math
-import cairo
-import checkUpdate
 import action
 import apt
 import apt_pkg
-import downloadManagePage
+import cairo
+import checkUpdate
 import detailView
 import download
+import downloadManagePage
+import getopt
 import glib
-import subprocess
 import gobject
 import gtk
+import ignorePage
 import json
+import math
+import moreWindow
 import navigatebar
+import os
 import pango
 import pangocairo
-import pygtk
 import recommendPage
 import repoCache
 import repoPage
 import search
 import searchPage
 import searchUninstallPage as sp
+import socket
 import statusbar
+import subprocess
 import sys
+import themeSelect
 import threading as td
 import titlebar
 import uninstallPage
 import updateList
 import updatePage
-import ignorePage
+import urllib
 import urllib2
 import utils
-pygtk.require('2.0')
-
-import socket
-import os
 
 class DeepinSoftwareCenter(object):
     '''Interface for software center.'''
-    DEFAULT_WIDTH = 890
 
     def __init__(self):
         '''Init.'''
@@ -79,11 +78,11 @@ class DeepinSoftwareCenter(object):
         # Init apt cache.
         self.detailViewDict = {}
         self.searchViewDict = {}
-        self.noscreenshotList = []
         self.entryIgnorePage = False
         self.downloadQueue = None
         self.actionQueue = None
         self.pauseList = []
+        self.defaultPageId = PAGE_RECOMMEND
         
         # dpkg will failed if not set TERM and PATH environment variable.  
         os.environ["TERM"] = "xterm"
@@ -97,10 +96,8 @@ class DeepinSoftwareCenter(object):
         self.window = self.initMainWindow()
         self.window.connect("size-allocate", lambda w, a: updateShape(w, a, RADIUS))
         self.hasMax = False
-        self.topLine = gtk.Image()
         self.leftLine = gtk.Image()
         self.rightLine = gtk.Image()
-        drawAlphaLine(self.topLine, appTheme.getDynamicAlphaColor("bodyTop"), 1, False)
         drawVerticalLine(self.leftLine, 1)
         drawVerticalLine(self.rightLine, 1)
         self.mainBox = gtk.VBox()
@@ -132,7 +129,6 @@ class DeepinSoftwareCenter(object):
             self.closeWindow)
         self.navigatebar = navigatebar.NavigateBar()
         self.bodyBox = gtk.HBox()
-        self.frameBox = gtk.VBox()
         self.contentBox = gtk.VBox()
         
         self.window.connect_after("show", lambda w: self.createTooltips())
@@ -193,8 +189,8 @@ class DeepinSoftwareCenter(object):
         
         # Redraw big screenshot.
         for dView in self.detailViewDict.values():
-            if dView.bigScreenshot != None:
-                dView.bigScreenshot.window.queue_draw()
+            if dView.smallScreenshot != None and dView.smallScreenshot.bigScreenshot != None:
+                dView.smallScreenshot.bigScreenshot.window.queue_draw()
                 
         # Redraw theme select window.
         if self.themeSelectWindow.window.get_visible():
@@ -540,10 +536,16 @@ class DeepinSoftwareCenter(object):
 
                     # Add in uninstall list.
                     self.updateUninstallView(pkgName, not isMarkDeleted)
+                    
+                    # Save upgrade number.
+                    self.saveUpgradeNum()
                 else:
                     print "Impossible: %s not in RepoCache" % (pkgName)
         elif actionType == ACTION_UNINSTALL:
             for (pkgName, isMarkDeleted) in pkgList:
+                # Send uninstall count.
+                SendUninstallCount(pkgName).start()
+                
                 if self.repoCache.cache.has_key(pkgName):
                     # Update application information.
                     appInfo = self.repoCache.cache[pkgName]
@@ -794,14 +796,15 @@ class DeepinSoftwareCenter(object):
         window.set_decorated(False)
 
         # Init.
-        window.set_title('深度Linux软件中心')
+        window.set_title(__("Deepin Software Center"))
         window.set_position(gtk.WIN_POS_CENTER_ALWAYS)
         (width, height) = utils.getScreenSize(window)
-        window.set_default_size(self.DEFAULT_WIDTH, -1)
+        window.set_default_size(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
         window.set_geometry_hints(
             None,
-            self.DEFAULT_WIDTH, # minimum width
-            -1, -1, -1, -1, -1, -1, -1, -1, -1
+            DEFAULT_WINDOW_WIDTH,  # minimum width
+            DEFAULT_WINDOW_HEIGHT, # minimum height
+            -1, -1, -1, -1, -1, -1, -1, -1
             )
 
         # Set icon.
@@ -851,6 +854,9 @@ class DeepinSoftwareCenter(object):
         
         gtk.main_quit()
         
+        # Exit command proxy.
+        sendCommand("exit")
+        
     def main(self):
         '''Main'''
         # Connect components.
@@ -861,9 +867,7 @@ class DeepinSoftwareCenter(object):
         self.topbox.pack_start(self.navigatebar.box, False)
         self.mainBox.pack_start(self.bodyBox)
         self.bodyBox.pack_start(self.leftLine, False, False)
-        self.bodyBox.pack_start(self.frameBox)
-        self.frameBox.pack_start(self.topLine, False, False)
-        self.frameBox.pack_start(self.contentBox)
+        self.bodyBox.pack_start(self.contentBox)
         self.bodyBox.pack_start(self.rightLine, False, False)
 
         # Add statusbar.
@@ -880,8 +884,8 @@ class DeepinSoftwareCenter(object):
         self.window.show_all()
 
         # Select software update page if add "show-update" option.
-        if len(sys.argv) == 2 and sys.argv[1] == "show-update":
-            self.selectPage(PAGE_UPGRADE)
+        if len(sys.argv) >= 2 and sys.argv[1] == "show-update":
+            self.defaultPageId = PAGE_UPGRADE
             
         # Listen socket message for select upgrade page.
         self.socketThread = SocketThread(self.showUpgrade, self.raiseToTop)
@@ -914,9 +918,13 @@ class DeepinSoftwareCenter(object):
         waitBox.pack_start(waitAnimation)
         
         waitLabel = gtk.Label()
-        waitLabel.set_markup("<span foreground='#1A3E88' size='%s'>%s</span>" % (LABEL_FONT_LARGE_SIZE, "  加载中， 请稍候..."))
+        waitLabel.set_markup(
+            "<span foreground='%s' size='%s'>%s</span>" % (
+                appTheme.getDynamicColor("waiting").getColor(),
+                LABEL_FONT_LARGE_SIZE,
+                __(" Loading, please wait ...")))
         waitAlign = gtk.Alignment()
-        waitAlign.set(0.5, 0.3, 0.0, 0.0)
+        waitAlign.set(0.5, 0.7, 0.0, 0.0)
         waitAlign.add(waitLabel)
         waitBox.pack_start(waitAlign)
         
@@ -926,8 +934,11 @@ class DeepinSoftwareCenter(object):
     @postGUI
     def postInitThread(self):
         '''Execute after init thread finish.'''
-        # Default select recommend page.
-        self.selectPage(PAGE_RECOMMEND)
+        # Select default page.
+        self.selectPage(self.defaultPageId, False)
+        
+        # Save upgrade number.
+        self.saveUpgradeNum()
 
         # Update List.
         self.updateList.start()
@@ -939,9 +950,19 @@ class DeepinSoftwareCenter(object):
         # So use `gtk.window.set_keep_above` instead.
         self.window.set_keep_above(True)
         self.window.set_keep_above(False)
+        
+    def saveUpgradeNum(self):
+        '''Save upgrade number.'''
+        upgradeNum = self.repoCache.getUpgradableNum()
+        writeFile("./upgradeNum", str(upgradeNum))
 
-    def selectPage(self, pageId):
+    def selectPage(self, pageId, hideWindow=True):
         '''Select recommend page.'''
+        # Hide popup window.
+        if hideWindow:
+            self.hidePopupWindow()
+        
+        # Clean content.
         utils.containerRemoveAll(self.contentBox)
 
         self.navigatebar.pageId = pageId
@@ -980,10 +1001,10 @@ class DeepinSoftwareCenter(object):
         '''Select category.'''
         # Delete PAGE_REPO value from detailViewDict and searchViewDict.
         if self.detailViewDict.has_key(PAGE_REPO):
-            self.detailViewDict.pop(PAGE_REPO)
+            del self.detailViewDict[PAGE_REPO]
 
         if self.searchViewDict.has_key(PAGE_REPO):
-            self.searchViewDict.pop(PAGE_REPO)
+            del self.searchViewDict[PAGE_REPO]
 
         # Select repository page.
         self.selectPage(PAGE_REPO)
@@ -996,10 +1017,10 @@ class DeepinSoftwareCenter(object):
         '''Show upgrade page.'''
         # Delete PAGE_UPGRADE value from detailViewDict and searchViewDict.
         if self.detailViewDict.has_key(PAGE_UPGRADE):
-            self.detailViewDict.pop(PAGE_UPGRADE)
+            del self.detailViewDict[PAGE_UPGRADE]
 
         if self.searchViewDict.has_key(PAGE_UPGRADE):
-            self.searchViewDict.pop(PAGE_UPGRADE)
+            del self.searchViewDict[PAGE_UPGRADE]
 
         # Select upgrade page.
         self.selectPage(PAGE_UPGRADE)
@@ -1008,25 +1029,21 @@ class DeepinSoftwareCenter(object):
         '''Entry detail view.'''
         view = detailView.DetailView(
             self.aptCache, pageId, appInfo, self.switchStatus, self.downloadQueue, self.actionQueue,
-            self.exitDetailView, self.noscreenshotList, self.updateMoreComment, self.message)
+            self.exitDetailView, self.message)
         self.detailViewDict[pageId] = view
-
-        # Fetch detail thread.
-        fetchDetailThread = FetchDetail(pageId, utils.getPkgName(appInfo.pkg), self.updateDetailView)
-        fetchDetailThread.start()
 
         self.selectPage(pageId)
 
     def sendVote(self, name, vote):
         '''Send vote.'''
-        sendVoteThread = SendVote("%s/vote.php?n=%s&m=%s" % (SERVER_ADDRESS, name, vote), name, self.message)
+        sendVoteThread = SendVote(name, vote, self.message)
         sendVoteThread.start()
 
     def exitDetailView(self, pageId, pkgName):
         '''Exit detail view.'''
         # Remove detail view first.
         if self.detailViewDict.has_key(pageId):
-            self.detailViewDict.pop(pageId)
+            del self.detailViewDict[pageId]
 
         # Back page.
         self.selectPage(pageId)
@@ -1048,7 +1065,8 @@ class DeepinSoftwareCenter(object):
                 self.searchQuery,
                 pageId, self.repoCache, keyword, pkgList,
                 self.actionQueue,
-                self.entryDetailView, self.sendVote, self.fetchVote, self.exitSearchView)
+                self.entryDetailView, self.sendVote, self.fetchVote, self.exitSearchView,
+                self.message)
         self.searchViewDict[pageId] = page
         self.selectPage(pageId)
 
@@ -1056,7 +1074,7 @@ class DeepinSoftwareCenter(object):
         '''Exit search view.'''
         # Remove search view first.
         if self.searchViewDict.has_key(pageId):
-            self.searchViewDict.pop(pageId)
+            del self.searchViewDict[pageId]
 
         # Select page.
         self.selectPage(pageId)
@@ -1091,30 +1109,12 @@ class DeepinSoftwareCenter(object):
 
         if view != None:
             for vote in voteJson.items():
-                (pkgName, [starLevel, voteNum]) = vote
-                view.updateVoteView(pkgName, starLevel, voteNum)
+                try:
+                    (pkgName, [starLevel, commentNum]) = vote
+                    view.updateVoteView(pkgName, float(starLevel), commentNum)
+                except Exception, e:
+                    print "updateVote Error: %s" % (e)
                 
-    @postGUI
-    # Replace function for `updateDetailView` to toggle comment features.
-    def updateDetailView_(self, pageId, pkgName, voteJson):
-        pass
-
-    @postGUI
-    def updateDetailView(self, pageId, pkgName, voteJson):
-        '''Update vote view.'''
-        if self.detailViewDict.has_key(pageId):
-            detailView = self.detailViewDict[pageId]
-            if pkgName == utils.getPkgName(detailView.appInfo.pkg):
-                detailView.updateInfo(voteJson)
-
-    @postGUI
-    def updateMoreComment(self, pageId, pkgName, voteJson):
-        '''Update vote view.'''
-        if self.detailViewDict.has_key(pageId):
-            detailView = self.detailViewDict[pageId]
-            if pkgName == utils.getPkgName(detailView.appInfo.pkg):
-                detailView.updateMoreComment(voteJson)
-
     def upgradeSelectedPkgs(self, selectList):
         '''Upgrade select packages.'''
         # Get download and action packages.
@@ -1169,8 +1169,8 @@ class DeepinSoftwareCenter(object):
     
     def launchApplication(self, command):
         '''Launch application.'''
-        self.message("发送启动请求 (%s)" % (command))
-        utils.runCommand(command)
+        self.message(__("Send startup request (%s)") % (command))
+        sendCommand(command)
         
     def cleanDownloadCache(self):
         '''Clean download cache.'''
@@ -1237,11 +1237,11 @@ class DeepinSoftwareCenter(object):
         # Notify clean size.
         if cleanSize == 0:
             if pkgs == []:
-                self.message("恭喜您， 您的系统非常干净. :)")
+                self.message(__("Congratulations, your system is clean."))
             else:
-                self.message("软件中心正在使用下载的软件包， 请稍候清理。:)")
+                self.message(__("Software Center is using the downloaded package, please wait clearing."))
         else:
-            self.message("清理了%s个软件包， 释放了%s空间." % (packageNum, utils.formatFileSize(cleanSize)))            
+            self.message(__("Cleaned up %s package, release %s space.") % (packageNum, utils.formatFileSize(cleanSize)))            
         
 class InitThread(td.Thread):
     '''Add long time calculate in init thread to make startup faster.'''
@@ -1253,6 +1253,7 @@ class InitThread(td.Thread):
         
         self.softwareCenter = softwareCenter
 
+    # @printExecTime            
     def run(self):
         '''Run.'''
         # Execute operation before init start.
@@ -1263,8 +1264,25 @@ class InitThread(td.Thread):
         apt_pkg.init()
         center.aptCache = apt.Cache()
         
+        # Get update data directory.
+        osVersion = getOSVersion()
+        if osVersion == OS_VERSION:
+            if os.path.exists(UPDATE_DATA_DIR):
+                center.updateDataDir = UPDATE_DATA_DIR
+                # center.updateDataDir = UPDATE_DATA_BACKUP_DIR
+                print "Use newest data from %s" % UPDATE_DATA_DIR
+            else:
+                center.updateDataDir = UPDATE_DATA_BACKUP_DIR
+                print "Haven't found directory: %s, use %s instead" % (UPDATE_DATA_DIR, UPDATE_DATA_BACKUP_DIR)
+        else:
+            center.updateDataDir = UPDATE_DATA_BACKUP_DIR
+            print "Your system is not %s, deepin software center won't update `recommend list` to keep your system safety, if you want deepin software center update `recommend list` on your system, please contact AUTHOR (lazycat.manatee@gmail.com)." % OS_VERSION
+        
         # Init repo cache.
-        center.repoCache = repoCache.RepoCache(center.aptCache)
+        center.repoCache = repoCache.RepoCache(
+            center.aptCache,
+            center.updateDataDir,
+            )
         
         # Init update list.
         center.updateList = updateList.UpdateList(center.aptCache, center.statusbar)       
@@ -1296,6 +1314,7 @@ class InitThread(td.Thread):
             center.entryDetailView,
             center.selectCategory,
             center.launchApplication,
+            center.updateDataDir,
             )
         center.repoPage = repoPage.RepoPage(
             center.repoCache,
@@ -1328,6 +1347,7 @@ class InitThread(td.Thread):
             center.entrySearchView,
             center.sendVote,
             center.fetchVote,
+            center.message,
             )
         
         center.downloadManagePage = downloadManagePage.DownloadManagePage(
@@ -1376,21 +1396,26 @@ class FetchVote(td.Thread):
     def run(self):
         '''Run.'''
         try:
-            connection = urllib2.urlopen(("%s/getMark.php?n=" % (SERVER_ADDRESS)) + self.pkgArguments, timeout=GET_TIMEOUT)
-            voteJson = json.loads(connection.read())
+            args = {'n' : self.pkgArguments, "t" : "comment"}
+            connection = urllib2.urlopen(
+                "%s/softcenter/v1/mark" % (SERVER_ADDRESS),
+                data=urllib.urlencode(args),
+                timeout=POST_TIMEOUT
+                )
+            voteJson = json.loads(connection.read())            
             self.updateVoteCallback(voteJson, self.pageId, self.isSearchPage)
         except Exception, e:
-            print "Fetch vote data failed."
+            print "Fetch vote data failed: %s." % (e)
 
 class SendVote(td.Thread):
     '''Vote'''
 
-    def __init__(self, url, name, messageCallback):
+    def __init__(self, name, vote, messageCallback):
         '''Init for vote.'''
         td.Thread.__init__(self)
         self.setDaemon(True) # make thread exit when main program exit
-        self.url = url
         self.name = name
+        self.vote = vote
         self.messageCallback = messageCallback
 
     def run(self):
@@ -1398,34 +1423,20 @@ class SendVote(td.Thread):
         try:
             voteFile = "../voteBlacklist/%s" % (self.name)
             if os.path.exists(voteFile) and getLastUpdateHours(voteFile) <= 24:
-                self.messageCallback("为保证公正, 每天只能对%s评分一次." % (self.name))
+            # if False:
+                self.messageCallback(__("To ensure fairness, only a day to %s score once.") % (self.name))
             else:
-                post = urllib2.urlopen(self.url, timeout=POST_TIMEOUT)
-                self.messageCallback("%s 评分成功, 感谢参与!" % (self.name))
+                args = {'n' : self.name, 'm' : self.vote}
+                connection = urllib2.urlopen(
+                    "%s/softcenter/v1/mark" % (SERVER_ADDRESS),
+                    data=urllib.urlencode(args),
+                    timeout=POST_TIMEOUT
+                    )
+                self.messageCallback(__("%s vote success, thanks!") % (self.name))
                 utils.touchFile(voteFile)
         except Exception, e:
-            self.messageCallback("%s 评分失败, 请检查您的网络链接." % (self.name))
+            self.messageCallback(__("%s vote failed, please check your network link.") % (self.name))
             print "Error: ", e
-
-class FetchDetail(td.Thread):
-    '''Fetch detail view data.'''
-
-    def __init__(self, pageId, pkgName, updateDetailViewCallback):
-        '''Init for fetch detail.'''
-        td.Thread.__init__(self)
-        self.setDaemon(True) # make thread exit when main program exit
-        self.pageId  = pageId
-        self.pkgName = pkgName
-        self.updateDetailViewCallback = updateDetailViewCallback
-
-    def run(self):
-        '''Run'''
-        try:
-            connection = urllib2.urlopen(("%s/getComment.php?n=" % (SERVER_ADDRESS)) + self.pkgName, timeout=GET_TIMEOUT)
-            voteJson = json.loads(connection.read())
-            self.updateDetailViewCallback(self.pageId, self.pkgName, voteJson)
-        except Exception, e:
-            print "Fetch detail view data failed."
 
 class SocketThread(td.Thread):
     '''Socket thread.'''
@@ -1453,6 +1464,32 @@ class SocketThread(td.Thread):
                 self.raiseToTopCallback()
 
         self.socket.close()
+        
+class SendUninstallCount(td.Thread):
+    '''Send uninstall count.'''
+	
+    def __init__(self, pkgName):
+        '''Init for vote.'''
+        td.Thread.__init__(self)
+        self.setDaemon(True) # make thread exit when main program exit 
+        self.pkgName = pkgName
+
+    def run(self):
+        '''Run'''
+        try:
+            args = {'a' : 'u', 'n' : self.pkgName}
+            
+            connection = urllib2.urlopen(
+                "%s/softcenter/v1/analytics" % (SERVER_ADDRESS),
+                data=urllib.urlencode(args),
+                timeout=POST_TIMEOUT
+                )
+            print "Send uninstall count (%s) successful." % (self.pkgName)
+        except Exception, e:
+            print "Send uninstall count (%s) failed." % (self.pkgName)
+            print "Error: ", e
+            
+            
         
 if __name__ == "__main__":
     DeepinSoftwareCenter().main()

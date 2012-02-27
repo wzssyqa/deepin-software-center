@@ -1,6 +1,5 @@
 jockey-gtk
-jockey-kde
-fglrx
-ndisgtk
 ntfs-config
+ndisgtk
 nvidia-current
+jockey-kde

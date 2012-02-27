@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,19 +22,23 @@
 
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
 from theme import *
 import gtk
-import pygtk
-import utils
 import os
-pygtk.require('2.0')
+import utils
 
 class ThemeSelect(object):
     '''Theme select.'''
     def __init__(self, widget, changeThemeCallback):
         '''Init theme select.'''
         # Init.
+        dirs = evalFile("../theme/list.txt")
+        themeName = readFile("./defaultTheme", True)
         self.index = 0
+        for (index, dirname) in enumerate(dirs):
+            if themeName == dirname:
+                self.index = index
         self.dirnames = []
         self.changeThemeCallback = changeThemeCallback
         self.window = gtk.Window()
@@ -52,20 +56,24 @@ class ThemeSelect(object):
         self.titleAlign = gtk.Alignment()
         dLabel = DynamicSimpleLabel(
             self.titleAlign,
-            "更换皮肤",
+            __("Change Theme"),
             appTheme.getDynamicColor("themeSelectTitleText"),
             LABEL_FONT_LARGE_SIZE,
             )
         self.titleLabel = dLabel.getLabel()
-        alignY = 10
+        titleIconPaddingTop = 8
+        titleIconPaddingBottom = 2
         self.titleAlign.set(0.0, 0.0, 1.0, 1.0)
-        self.titleAlign.set_padding(alignY, alignY, 0, 0)
+        self.titleAlign.set_padding(titleIconPaddingTop, titleIconPaddingBottom, 0, 0)
         self.titleAlign.add(self.titleLabel)
         self.titleEventBox.add(self.titleAlign)
         
+        themeIconPaddingTop = 0
+        themeIconPaddingBottom = 5
         self.themeIconBox = gtk.VBox()
         self.themeIconAlign = gtk.Alignment()
         self.themeIconAlign.set(0.5, 0.5, 0.0, 0.0)
+        self.themeIconAlign.set_padding(themeIconPaddingTop, themeIconPaddingBottom, 0, 0)
         self.themeIconAlign.add(self.themeIconBox)
         self.mainBox.pack_start(self.themeIconAlign)
         
@@ -89,7 +97,6 @@ class ThemeSelect(object):
         '''Show.'''
         # Scan theme directory.
         containerRemoveAll(self.themeIconBox)
-        # dirs = os.listdir("../theme/")
         dirs = evalFile("../theme/list.txt")
         self.dirnames = dirs
         boxs = map (lambda n: gtk.HBox(), range(0, len(dirs) / 3 + len(dirs) % 3))
@@ -120,15 +127,14 @@ class ThemeSelect(object):
 class ThemeSlide(object):
     '''Theme slide.'''
     
-    PADDING_X = 10
-    PADDING_Y = 5
+    PADDING_X = 2
+    PADDING_Y = 2
 	
     def __init__(self, dirname, index, setIndexCallback, getIndexCallback):
         '''Init theme slide.'''
         # Init.
         self.dirname = dirname
         self.pixbuf = gtk.gdk.pixbuf_new_from_file("../theme/%s/image/skin/icon.png" % (self.dirname))
-        self.iconName = evalFile("../theme/%s/name.txt" % dirname)[getDefaultLanguage()]
         
         # Build widget.
         self.box = gtk.VBox()
@@ -147,18 +153,6 @@ class ThemeSlide(object):
             index, 
             getIndexCallback)
         
-        self.iconNameBox = gtk.EventBox()
-        self.iconNameBox.set_visible_window(False)
-        dLabel = DynamicSimpleLabel(
-            self.iconNameBox,
-            self.iconName,
-            appTheme.getDynamicColor("themeIconName"),
-            LABEL_FONT_SIZE,
-            )
-        self.iconNameLabel = dLabel.getLabel()
-        self.iconNameBox.add(self.iconNameLabel)
-        
         self.box.pack_start(self.iconBox, False, False)
-        self.box.pack_start(self.iconNameBox, False, False)
         self.align.add(self.box)
         

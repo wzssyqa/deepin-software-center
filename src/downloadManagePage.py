@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,10 +21,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from appItem import *
-import gtk
-import pygtk
+from lang import __, getDefaultLanguage
 import downloadManageView
-pygtk.require('2.0')
+import gtk
 
 class DownloadManagePage(object):
     '''Interface for download page.'''
@@ -61,46 +60,50 @@ class Topbar(object):
         '''Init for top bar.'''
         # Init.
         self.paddingX = 5
-        self.numColor = '#006efe'
-        self.normalColor = '#1A3E88'
-        self.hoverColor = '#0084FF'
-        self.selectColor = '#000000'
         
         self.box = gtk.HBox()
         self.boxAlign = gtk.Alignment()
         self.boxAlign.set(0.0, 0.5, 1.0, 1.0)
-        self.boxAlign.set_padding(0, 0, TOPBAR_PADDING_LEFT, TOPBAR_PADDING_UPDATE_RIGHT)
+        self.boxAlign.set_padding(0, 0, TOPBAR_PADDING_LEFT - 10, TOPBAR_PADDING_UPDATE_RIGHT + 5)
         self.boxAlign.add(self.box)
         self.eventbox = gtk.EventBox()
         drawTopbar(self.eventbox)
         
         self.numLabel = gtk.Label()
+        self.numLabelAlign = gtk.Alignment()
+        self.numLabelAlign.set(0.0, 0.5, 0.0, 0.0)
+        self.numLabelAlign.set_padding(0, 0, self.paddingX, 0)
+        self.numLabelAlign.add(self.numLabel)
+        self.iconPadding = 5
         
-        (self.openDirLabel, self.openDirEventBox) = setDefaultClickableDynamicLabel(
-            "打开下载目录",
-            "topbarButton",
-            )
+        self.openDirEventBox = setIconLabelButton(
+            __("Open download directory"), 
+            appTheme.getDynamicPixbuf("topbar/open_normal.png"),
+            appTheme.getDynamicPixbuf("topbar/open_hover.png"),
+            self.iconPadding)
+        
         self.openDirAlign = gtk.Alignment()
         self.openDirAlign.set(0.0, 0.5, 0.0, 0.0)
         self.openDirAlign.add(self.openDirEventBox)
-        self.openDirEventBox.connect("button-press-event", lambda w, e: utils.runCommand("xdg-open /var/cache/apt/archives/"))
+        self.openDirEventBox.connect("button-press-event", lambda w, e: utils.sendCommand("xdg-open /var/cache/apt/archives/"))
         
-        (self.cleanLabel, self.cleanEventBox) = setDefaultClickableDynamicLabel(
-            "智能清理下载缓存",
-            "topbarButton",
-            )
+        self.cleanEventBox = setIconLabelButton(
+            __("Clean download cache"), 
+            appTheme.getDynamicPixbuf("topbar/clean_normal.png"),
+            appTheme.getDynamicPixbuf("topbar/clean_hover.png"),
+            self.iconPadding)
+        
         self.cleanEventBox.connect("button-press-event", lambda w, e: cleanDownloadCacheCallback())
         self.cleanAlign = gtk.Alignment()
         self.cleanAlign.set(1.0, 0.5, 0.0, 0.0)
         self.cleanAlign.add(self.cleanEventBox)
-        utils.setHelpTooltip(self.cleanEventBox, "清理下载缓存， 节省您的硬盘空间！")
+        utils.setHelpTooltip(self.cleanEventBox, __("Clean download cache, save your disk space!"))
         
         # Connect.
         self.updateNum(itemNum)
-        self.numLabel.set_alignment(0.0, 0.5)
-        self.box.pack_start(self.numLabel, False, False, self.paddingX)
-        self.box.pack_start(self.openDirAlign, True, True, self.paddingX)
-        self.box.pack_start(self.cleanAlign, True, True, self.paddingX)
+        self.box.pack_start(self.numLabelAlign, True, True, self.paddingX)
+        self.box.pack_start(self.openDirAlign, False, False, self.paddingX)
+        self.box.pack_start(self.cleanAlign, False, False, self.paddingX)
         self.eventbox.add(self.boxAlign)
         
     def updateNum(self, upgradeNum):
@@ -109,6 +112,10 @@ class Topbar(object):
         if upgradeNum == 0:
             markup = ""
         else:
-            markup = ("<span size='%s'>有 </span>" % (LABEL_FONT_SIZE)) + ("<span foreground='%s' size='%s'>%s</span>" % (self.numColor, LABEL_FONT_SIZE, str(upgradeNum))) + ("<span size='%s'> 个包正在下载</span>" % (LABEL_FONT_SIZE))
-                   
+            markup = (__("Topbar DownloadManagePage") % (LABEL_FONT_SIZE, 
+                                                         appTheme.getDynamicColor("topbarNum").getColor(),
+                                                         LABEL_FONT_SIZE, 
+                                                         str(upgradeNum), 
+                                                         LABEL_FONT_SIZE))
+                               
         self.numLabel.set_markup(markup)

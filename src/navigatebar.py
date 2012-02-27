@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,13 +20,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from utils import *
 from constant import *
 from draw import *
+from lang import __, getDefaultLanguage
+from utils import *
 import gtk
-import pygtk
 import utils
-pygtk.require('2.0')
 
 class NavigateBar(object):
     '''Interface for navigate bar.'''
@@ -38,6 +37,9 @@ class NavigateBar(object):
         self.selectPageCallback = None
         self.getRunningNumCallback = None
         self.iconPadding = 8
+        self.animationFrames = 8
+        self.updateAnimationCount = 0
+        self.downloadAnimationCount = 0
         
         self.pageId = PAGE_RECOMMEND
         
@@ -45,49 +47,44 @@ class NavigateBar(object):
         
         self.logoIcon = self.createLogoIcon()
         self.logoAlign = gtk.Alignment()
-        self.logoAlign.set_padding(0, 0, 60, 10)
+        self.logoAlign.set_padding(10, 0, 40, 0)
         self.logoAlign.add(self.logoIcon)
         self.box.pack_start(self.logoAlign, False, False)
 
         self.navBox = gtk.HBox()
         self.navAlign = gtk.Alignment()
         self.navAlign.set(0.3, 0.5, 0.0, 0.0)
-        self.navAlign.set_padding(0, 0, 0, 60)
+        self.navAlign.set_padding(0, 0, 0, 120)
         self.navAlign.add(self.navBox)
         self.box.pack_start(self.navAlign, True, True)
         
         self.recommendIcon = self.createNavIcon(
-            "精选推荐", 
-            # "Recommend",
+            __("Nav Recommend"),
             "navigate/nav_recommend.png", 
             PAGE_RECOMMEND)
         self.navBox.pack_start(self.recommendIcon, False, False, self.iconPadding)
         
         self.repositoryIcon = self.createNavIcon(
-            "软件仓库", 
-            # "Repository",
+            __("Nav Repository"),
             "navigate/nav_repo.png", 
             PAGE_REPO)
         self.navBox.pack_start(self.repositoryIcon, False, False, self.iconPadding)
         
         self.updateIcon = self.createUpdateIcon(
-            "软件更新", 
-            # "Update",
+            __("Nav Update"),
             "navigate/nav_update.png", 
             PAGE_UPGRADE,
             self.getUpgradableNum)
         self.navBox.pack_start(self.updateIcon, False, False, self.iconPadding)
         
         self.uninstallIcon = self.createNavIcon(
-            "软件卸载",
-            # "Uninstall",
+            __("Nav Uninstall"),
             "navigate/nav_uninstall.png", 
             PAGE_UNINSTALL)
         self.navBox.pack_start(self.uninstallIcon, False, False, self.iconPadding)
 
         self.downloadIcon = self.createUpdateIcon(
-            "下载管理", 
-            # "Download",
+            __("Nav Download Manage"),
             "navigate/nav_download.png", 
             PAGE_DOWNLOAD_MANAGE, 
             self.getRunningNum)
@@ -101,7 +98,7 @@ class NavigateBar(object):
         eventBox.set_visible_window(False)
         navBox = gtk.VBox()
         navImage = gtk.image_new_from_pixbuf(gtk.gdk.pixbuf_new_from_file(
-                "../theme/default/image/logo/%s/logo.png" % (getDefaultLanguage())))
+                "../icon/logo/%s/logo.png" % (getDefaultLanguage())))
         navBox.pack_start(navImage, False)
         eventBox.add(navBox)
         eventBox.show_all()
@@ -124,6 +121,19 @@ class NavigateBar(object):
             callback
             )
         
+        box = gtk.VBox()
+        
+        label = gtk.Label()
+        label.set_markup("<span foreground='%s'>%s</span>" % (
+                appTheme.getDynamicColor("navigateText").getColor(),
+                iconName))
+        labelAlign = gtk.Alignment()
+        labelAlign.set(0.5, 1.0, 0.0, 0.0)
+        labelAlign.add(label)
+        box.pack_start(labelAlign)
+        
+        eventButton.add(box)
+        
         return eventButton
     
     def createNavIcon(self, iconName, iconPath, pageId):
@@ -141,6 +151,19 @@ class NavigateBar(object):
             pageId,
             self.getPageId
             )
+        
+        box = gtk.VBox()
+        
+        label = gtk.Label()
+        label.set_markup("<span foreground='%s'>%s</span>" % (
+                appTheme.getDynamicColor("navigateText").getColor(),
+                iconName))
+        labelAlign = gtk.Alignment()
+        labelAlign.set(0.5, 1.0, 0.0, 0.0)
+        labelAlign.add(label)
+        box.pack_start(labelAlign)
+        
+        eventButton.add(box)
         
         return eventButton
     

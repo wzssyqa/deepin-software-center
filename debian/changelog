@@ -1,3 +1,58 @@
+deepin-software-center (2.0.5) oneiric; urgency=low
+
+  * commandProxy won't start if it exited abnormally
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Fri, 30 Dec 2011 22:32:44 +0800
+
+deepin-software-center (2.0.4) oneiric; urgency=low
+
+  * Upstream update
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Fri, 30 Dec 2011 22:00:14 +0800
+
+deepin-software-center (2.0.3) oneiric; urgency=low
+
+  * Fix typo in deepin-check-update.desktop
+  * Upstream update
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Fri, 30 Dec 2011 18:47:33 +0800
+
+deepin-software-center (2.0.2) oneiric; urgency=low
+
+  * Upstream update
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Fri, 30 Dec 2011 15:12:58 +0800
+
+deepin-software-center (2.0.1) oneiric; urgency=low
+
+  * Put deepin-check-update.desktop in /etc/xdg/autostart/
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Thu, 29 Dec 2011 18:14:27 +0800
+
+deepin-software-center (2.0) oneiric; urgency=low
+
+  * 2.0 release
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Thu, 29 Dec 2011 16:44:45 +0800
+
+deepin-software-center (2.0~rc2-1) oneiric; urgency=low
+
+  * RC2 release
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Wed, 28 Dec 2011 18:01:52 +0800
+
+deepin-software-center (2.0~rc-1) oneiric; urgency=low
+
+  * RC release
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Fri, 23 Dec 2011 18:31:01 +0800
+
+deepin-software-center (2.0~beta1.2-1) oneiric; urgency=low
+
+  * Upstream update
+
+ -- Zhang Cheng <zhangcheng@linuxdeepin.com>  Thu, 01 Dec 2011 17:18:33 +0800
+
 deepin-software-center (2.0~beta1.1-2) oneiric; urgency=low
 
   * New commit: fix crash on en: zh-CN -> zh_CN.

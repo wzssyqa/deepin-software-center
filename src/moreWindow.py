@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2011 Deepin, Inc.
-#               2011 Yong Wang
+#               2011 Wang Yong
 # 
-# Author:     Yong Wang <lazycat.manatee@gmail.com>
-# Maintainer: Yong Wang <lazycat.manatee@gmail.com>
+# Author:     Wang Yong <lazycat.manatee@gmail.com>
+# Maintainer: Wang Yong <lazycat.manatee@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,13 +20,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from draw import *
+from lang import __, getDefaultLanguage
 from searchEntry import *
 from utils import *
-from draw import *
 import gtk
-import pygtk
 import utils
-pygtk.require('2.0')
 
 class MoreWindow(object):
     '''More window.'''
@@ -60,11 +59,10 @@ class MoreWindow(object):
         self.window.add(self.mainAlign)
         
         # Create list item.
-        self.createListItem(1, "新版功能", self.newFeature)
-        self.createListItem(2, "代理设置", self.setProxy)
-        self.createListItem(3, "论坛求助", self.forumHelp)
-        self.createListItem(4, "加入我们", self.joinUs)
-        self.createListItem(5, "问题反馈", self.reportProblem)
+        self.createListItem(1, __("New Feature"), self.newFeature)
+        # self.createListItem(2, __("Proxy Setup"), self.setProxy)
+        self.createListItem(3, __("Forum Help"), self.forumHelp)
+        self.createListItem(4, __("Report Problem"), self.reportProblem)
 
         # Set shape.
         self.window.connect("size-allocate", lambda w, a: updateShape(w, a, POPUP_WINDOW_RADIUS))
@@ -82,15 +80,11 @@ class MoreWindow(object):
             
     def forumHelp(self):
         '''Forum help.'''
-        runCommand("xdg-open http://www.linuxdeepin.com/forum")
-    
-    def joinUs(self):
-        '''Join us.'''
-        runCommand("xdg-open http://www.linuxdeepin.com/recruitment")
+        sendCommand("xdg-open http://www.linuxdeepin.com/forum")
     
     def reportProblem(self,):
         '''Report problem.'''
-        runCommand("xdg-open http://www.linuxdeepin.com/forum/17")
+        sendCommand("xdg-open http://www.linuxdeepin.com/forum/17")
     
     def setIndex(self, index):
         '''Set index.'''
@@ -128,13 +122,14 @@ class MoreWindow(object):
             appTheme.getDynamicColor("menuItem"),
             LABEL_FONT_SIZE,
             ).getLabel()
+        label.set_alignment(0.0, 0.0)
         button.add(label)
         self.mainBox.pack_start(button)
     
 class NewFeature(object):
     '''New feature.'''
     
-    WINDOW_WIDTH = 360
+    WINDOW_WIDTH = 380
     WINDOW_HEIGHT = 270
 	
     def __init__(self, widget):
@@ -156,7 +151,11 @@ class NewFeature(object):
             )
         
         self.mainBox = gtk.VBox()
-        self.window.add(self.mainBox)
+        self.mainEventBox = gtk.EventBox()
+        self.mainEventBox.set_visible_window(False)
+        self.mainEventBox.add(self.mainBox)
+        self.window.add(self.mainEventBox)
+        self.mainEventBox.connect("button-press-event", lambda w, e: utils.moveWindow(w, e, self.window))
         
         self.titleBox = gtk.HBox()
         self.mainBox.pack_start(self.titleBox, False, False)
@@ -164,14 +163,14 @@ class NewFeature(object):
         self.titleAlign = gtk.Alignment()
         dLabel = DynamicSimpleLabel(
             self.titleAlign,
-            "软件中心2.0新功能",
+            __("Software Center 2.0 New Feature"),
             appTheme.getDynamicColor("themeSelectTitleText"),
             LABEL_FONT_LARGE_SIZE,
             )
         self.titleLabel = dLabel.getLabel()
         alignY = 4
-        alignX = 10
-        self.titleAlign.set(0.0, 0.0, 1.0, 1.0)
+        alignX = 20
+        self.titleAlign.set(0.0, 0.0, 0.0, 0.0)
         self.titleAlign.set_padding(alignY, alignY, alignX, alignX)
         self.titleAlign.add(self.titleLabel)
         self.titleBox.pack_start(self.titleAlign, True, True)
@@ -182,24 +181,24 @@ class NewFeature(object):
         self.titleBox.pack_start(self.closeButton, False, False)
         
         self.scrolledwindow = gtk.ScrolledWindow()
-        self.scrolledwindow.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+        self.scrolledwindow.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
         drawVScrollbar(self.scrolledwindow)
         
         self.textView = DynamicTextView(
             self.scrolledwindow,
             appTheme.getDynamicColor("background"),
             appTheme.getDynamicColor("newFeatureText"),
-            appTheme.getDynamicPixbuf("skin/background.png"),
+            None
             ).textView
         utils.addInScrolledWindow(self.scrolledwindow, self.textView)
         self.textViewAlign = gtk.Alignment()
         self.textViewAlign.set(0.5, 0.5, 1.0, 1.0)
-        self.textViewAlign.set_padding(10, 10, 10, 10)
+        self.textViewAlign.set_padding(10, 20, 20, 20)
         self.textViewAlign.add(self.scrolledwindow)
         self.textView.set_editable(False)
         self.textView.set_wrap_mode(gtk.WRAP_CHAR)
         self.mainBox.pack_start(self.textViewAlign, True, True)
-        self.textView.get_buffer().set_text(readFile("../news/%s.txt" % (getDefaultLanguage())))
+        self.textView.get_buffer().set_text(__("News\n"))
         
         self.window.set_size_request(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
         
@@ -224,9 +223,10 @@ class ProxySetup(object):
     '''Proxy setup..'''
     
     WINDOW_WIDTH = 360
-    WINDOW_HEIGHT = 90
-    ALIGN_X = 10
-    ALIGN_Y = 4
+    WINDOW_HEIGHT = 193
+    ALIGN_X = 20
+    ALIGN_Y = 10
+    ACTION_ALIGN_Y = 10
     SETUP_BUTTON_PADDING_X = 5
 	
     def __init__(self, widget, messageCallback):
@@ -248,7 +248,11 @@ class ProxySetup(object):
             )
         
         self.mainBox = gtk.VBox()
-        self.window.add(self.mainBox)
+        self.mainEventBox = gtk.EventBox()
+        self.mainEventBox.set_visible_window(False)
+        self.mainEventBox.add(self.mainBox)
+        self.window.add(self.mainEventBox)
+        self.mainEventBox.connect("button-press-event", lambda w, e: utils.moveWindow(w, e, self.window))
         
         self.titleBox = gtk.HBox()
         self.mainBox.pack_start(self.titleBox, False, False)
@@ -256,14 +260,14 @@ class ProxySetup(object):
         self.titleAlign = gtk.Alignment()
         dLabel = DynamicSimpleLabel(
             self.titleAlign,
-            "设置代理",
+            __("Proxy Setup"),
             appTheme.getDynamicColor("themeSelectTitleText"),
             LABEL_FONT_LARGE_SIZE,
             )
         self.titleLabel = dLabel.getLabel()
         alignY = 4
-        alignX = 10
-        self.titleAlign.set(0.0, 0.0, 1.0, 1.0)
+        alignX = 20
+        self.titleAlign.set(0.0, 0.0, 0.0, 0.0)
         self.titleAlign.set_padding(alignY, alignY, alignX, alignX)
         self.titleAlign.add(self.titleLabel)
         self.titleBox.pack_start(self.titleAlign, True, True)
@@ -276,60 +280,131 @@ class ProxySetup(object):
         self.setupBox = gtk.VBox()
         self.setupAlign = gtk.Alignment()
         self.setupAlign.set(0.0, 0.0, 1.0, 1.0)
-        self.setupAlign.set_padding(self.ALIGN_Y, self.ALIGN_Y, self.ALIGN_X, self.ALIGN_X - self.SETUP_BUTTON_PADDING_X)
+        self.setupAlign.set_padding(self.ALIGN_Y, self.ALIGN_Y, self.ALIGN_X, self.ALIGN_X + 10)
         self.setupAlign.add(self.setupBox)
         self.mainBox.pack_start(self.setupAlign, False, False)
         
-        self.proxyRuleLabel = DynamicSimpleLabel(
-            self.setupBox,
-            "代理规则:  [http://][USER:PASSWORD@]HOST[:PORT]",
+        self.itemLabelWidth = 8
+        
+        (self.addressBox, self.addressLabel, self.addressEntry) = self.createInputItem(__("Proxy Address"))
+        (self.portBox, self.portLabel, self.portEntry) = self.createInputItem(__("Proxy Port"))
+        (self.userBox, self.userLabel, self.userEntry) = self.createInputItem(__("Proxy User"))
+        (self.passwordBox, self.passwordLabel, self.passwordEntry) = self.createInputItem(__("Proxy Password"), True)
+        
+        self.setupBox.pack_start(self.addressBox)
+        self.setupBox.pack_start(self.portBox)
+        self.setupBox.pack_start(self.userBox)
+        self.setupBox.pack_start(self.passwordBox)
+        
+        self.actionBox = gtk.HBox()
+        self.actionAlign = gtk.Alignment()
+        self.actionAlign.set(1.0, 0.5, 0.0, 0.0)
+        self.actionAlign.set_padding(self.ACTION_ALIGN_Y, self.ACTION_ALIGN_Y, 0, 0)
+        self.actionAlign.add(self.actionBox)
+        self.setupBox.pack_start(self.actionAlign, True, True)
+        
+        buttonPaddingX = 10
+        self.setupButton = utils.newButtonWithoutPadding()
+        self.setupButton.connect("button-press-event", lambda w, e: self.setProxy())
+        drawButton(self.setupButton, "button", "proxySetup", True, __("Proxy OK"), BUTTON_FONT_SIZE_SMALL, "buttonFont")
+        self.actionBox.pack_start(self.setupButton, False, False, buttonPaddingX)
+
+        self.cancelButton = utils.newButtonWithoutPadding()
+        self.cancelButton.connect("button-press-event", lambda w, e: self.cancelProxy())
+        drawButton(self.cancelButton, "button", "proxySetup", True, __("Proxy Cancel"), BUTTON_FONT_SIZE_SMALL, "buttonFont")
+        self.actionBox.pack_start(self.cancelButton, False, False)
+        
+        # Read proxy setup.
+        self.readProxySetup()
+            
+        # Hide window if user click on main window.
+        widget.connect("button-press-event", lambda w, e: self.hide())
+        
+    def readProxySetup(self):
+        '''Read proxy setup.'''
+        proxyString = evalFile("./proxy", True)
+        if proxyString != None:
+            proxyDict = proxyString
+        else:
+            proxyDict = {}
+            
+        if proxyDict.has_key("address"):
+            self.addressEntry.set_text(proxyDict["address"])
+        else:
+            self.addressEntry.set_text("")
+        if proxyDict.has_key("port"):
+            self.portEntry.set_text(proxyDict["port"])
+        else:
+            self.portEntry.set_text("")
+        if proxyDict.has_key("user"):
+            self.userEntry.set_text(proxyDict["user"])
+        else:
+            self.userEntry.set_text("")
+        if proxyDict.has_key("password"):
+            self.passwordEntry.set_text(proxyDict["password"])
+        else:
+            self.passwordEntry.set_text("")
+        
+    def createInputItem(self, labelName, isPassword=False):
+        '''Create input item.'''
+        itemBox = gtk.HBox()
+        itemLabel = DynamicSimpleLabel(
+            itemBox,
+            labelName,
             appTheme.getDynamicColor("background"),
             ).getLabel()
-        self.proxyRuleLabel.set_alignment(0.0, 0.0)
-        self.proxyRuleAlign = gtk.Alignment()
-        self.proxyRuleAlign.set(0.0, 0.0, 1.0, 1.0)
-        self.proxyRuleAlign.set_padding(0, self.ALIGN_Y, 0, 0)
-        self.proxyRuleAlign.add(self.proxyRuleLabel)
-        self.setupBox.pack_start(self.proxyRuleAlign, False, False)
         
-        self.inputBox = gtk.HBox()
-        self.setupBox.pack_start(self.inputBox, False, False)
+        itemLabel.set_alignment(0.0, 0.5)
+        itemLabel.set_width_chars(self.itemLabelWidth)
         
-        proxyString = readFirstLine("./proxy")
-        self.inputEntry = SearchEntry(
-            self.inputBox,
-            proxyString,
+        itemBox.pack_start(itemLabel, False, False)
+        itemEntry = SearchEntry(
+            itemBox,
+            "",
             appTheme.getDynamicColor("entryHint"),
             appTheme.getDynamicColor("entryBackground"),
             appTheme.getDynamicColor("entryForeground"),
             True,
             )
-        self.inputBox.pack_start(self.inputEntry, True, True)
-        
-        self.setupButton = utils.newButtonWithoutPadding()
-        self.setupButton.connect("button-press-event", lambda w, e: self.setProxy())
-        drawButton(self.setupButton, "confirm", "index", False, "设定", BUTTON_FONT_SIZE_SMALL, "buttonFont")
-        self.inputBox.pack_start(self.setupButton, False, False, self.SETUP_BUTTON_PADDING_X)
+        if isPassword:
+            itemEntry.set_visibility(False)
             
-        # Hide window if user click on main window.
-        widget.connect("button-press-event", lambda w, e: self.hide())
+        itemBox.pack_start(itemEntry, True, True)
+        
+        return (itemBox, itemLabel, itemEntry)
         
     def setProxy(self):
         '''Set proxy.'''
         # Read proxy string.
-        proxyString = self.inputEntry.get_text().split(" ")[0]
+        address = utils.getEntryText(self.addressEntry)
+        port = utils.getEntryText(self.portEntry)
+        user = utils.getEntryText(self.userEntry)
+        password = utils.getEntryText(self.passwordEntry)
         
         # Save proxy setup.
-        writeFile("./proxy", proxyString)
+        writeFile(
+            "./proxy", 
+            str({"address" : address,
+                 "port" : port,
+                 "user" : user,
+                 "password" : password}))
         
         # Hide window.
         self.hide()
         
         # Display message.
-        if proxyString == "":
-            self.messageCallback("取消代理成功！")
-        else:
-            self.messageCallback("代理设置成功!")
+        self.messageCallback(__("Setup proxy!"))
+            
+    def cancelProxy(self):
+        '''Cancel proxy.'''
+        # Save proxy setup.
+        writeFile("./proxy", "{}")
+        
+        # Hide window.
+        self.hide()
+        
+        # Display message.
+        self.messageCallback(__("Cancel proxy!"))
         
     def show(self):
         '''Show.'''
@@ -340,6 +415,8 @@ class ProxySetup(object):
             wy + rect.y + (rect.height - self.WINDOW_HEIGHT) / 2,
             )
         self.window.show_all()
+        
+        self.readProxySetup()
         
     def hide(self):
         '''Hide.'''
