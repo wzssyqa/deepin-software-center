@@ -1,3 +1,5 @@
+debian/uuid /var/lib/deepin-software-center/
+
 icon /usr/share/deepin-software-center
 locale /usr/share/deepin-software-center
 pkgData /usr/share/deepin-software-center
